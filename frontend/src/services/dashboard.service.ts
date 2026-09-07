@@ -7,9 +7,9 @@ import type {
   ServiceCase,
   SystemHealth,
 } from '../types'
-import 'dotenv'
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001'
+// const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`)
@@ -25,34 +25,4 @@ async function getJson<T>(path: string): Promise<T> {
   }
 
   return result.data as T
-}
-
-export function getDashboardOverview() {
-  return getJson<Overview>('/api/dashboard/overview')
-}
-
-export function getDashboardConversations() {
-  return getJson<ConversationSummary[]>('/api/dashboard/conversations')
-}
-
-export function getDashboardConversation(conversationId: string) {
-  return getJson<ConversationDetail>(
-    `/api/dashboard/conversations/${encodeURIComponent(conversationId)}`,
-  )
-}
-
-export function getDashboardCases() {
-  return getJson<ServiceCase[]>('/api/dashboard/cases')
-}
-
-export function getDashboardHandoffs() {
-  return getJson<HumanHandoff[]>('/api/dashboard/handoffs')
-}
-
-export function getDashboardActivity(limit = 50) {
-  return getJson<ActivityEvent[]>(`/api/dashboard/activity?limit=${limit}`)
-}
-
-export function getDashboardHealth() {
-  return getJson<SystemHealth>('/api/dashboard/health')
 }

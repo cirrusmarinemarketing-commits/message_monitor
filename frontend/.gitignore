@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env
+credentials.json
+token.json
+gmail-state.json
+service-account.json
