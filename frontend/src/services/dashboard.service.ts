@@ -8,7 +8,7 @@ import type {
   SystemHealth,
 } from '../types'
 
-const API_BASE = 'http://localhost:3001'
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:3001'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`)
