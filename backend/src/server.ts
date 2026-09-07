@@ -24,7 +24,7 @@ app.use("/api/dashboard", dashboardRouter);
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log(`A Final Odyssey running on port ${PORT}`);
 
     // Must run in-process: Gmail ingestion shares the same in-memory
