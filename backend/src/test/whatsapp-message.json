@@ -1,0 +1,39 @@
+{
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+            "changes": [
+                {
+                    "field": "messages",
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "668XXXXXXXX",
+                            "phone_number_id": "PHONE_NUMBER_ID"
+                        },
+                        "contacts": [
+                            {
+                                "profile": {
+                                    "name": "Victor"
+                                },
+                                "wa_id": "66812345678"
+                            }
+                        ],
+                        "messages": [
+                            {
+                                "from": "66812345678",
+                                "id": "wamid.TEST_MESSAGE_001",
+                                "timestamp": "1756870000",
+                                "type": "text",
+                                "text": {
+                                    "body": "Hello.\nI have tried to contact you through your webpage and via email with unsuccessful results. I am trying now with this WhatsApp message...\nI own a Climma equipment that is not working. I would like to know if you could check it for a diagnosis and repair.\nI will appreciate your response by answering to this WhatsApp. We are currently at Boat Lagoon.\nBest.\nVictor"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

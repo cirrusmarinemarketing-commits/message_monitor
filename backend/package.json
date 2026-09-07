@@ -1,0 +1,39 @@
+{
+  "name": "whatsapp-ai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "gmail:auth": "tsx src/gmail/setup.ts",
+    "gmail:read": "tsx src/gmail/test-read.ts",
+    "gmail:watch": "tsx src/gmail/watch.ts",
+    "gmail:pubsub": "tsx src/gmail/test-pubsub.ts",
+    "gmail:history": "tsx src/gmail/test-history.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "@google-cloud/pubsub": "^6.0.1",
+    "@google/genai": "^2.21.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "googleapis": "^178.0.0",
+    "groq-sdk": "^1.6.0",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.1",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
