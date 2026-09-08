@@ -4,6 +4,7 @@ import whatsappRouter from "./routes/whatsapp";
 import dashboardRouter from "./routes/dashboard";
 import cors from "cors";
 import { startGmailPubSubListener } from "./gmail/pubsub-listener";
+import { testDatabaseConnection } from "./database/index";
 
 dotenv.config();
 
@@ -24,10 +25,15 @@ app.use("/api/dashboard", dashboardRouter);
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", async () => {
     console.log(`A Final Odyssey running on port ${PORT}`);
 
-    // Must run in-process: Gmail ingestion shares the same in-memory
-    // conversation/case/handoff stores that the dashboard API reads from.
+    try {
+        const db = await testDatabaseConnection();
+        console.log("✓ PostgreSQL connected:", db.now);
+    } catch (error) {
+        console.error("✗ PostgreSQL connection failed:", error);
+    }
+
     startGmailPubSubListener();
 });
