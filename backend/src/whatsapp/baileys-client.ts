@@ -34,6 +34,7 @@ import { restoreAuthFolder, backupAuthFolder } from "./auth-store";
  */
 
 const AUTH_FOLDER = path.join(__dirname, "..", "..", "auth_info");
+let isReconnecting = false;
 
 function extractText(msg: any): string | null {
 	const m = msg.message;
@@ -124,12 +125,19 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 					"WhatsApp session logged out. Clear the whatsapp_auth row in Postgres and restart to re-link."
 				);
 				setComponentOffline("whatsapp", "logged_out");
-			} else {
-				console.log("WhatsApp connection closed, reconnecting…");
+			} else if (!isReconnecting) {
+				isReconnecting = true;
+				console.log("WhatsApp connection closed, reconnecting in 3s…");
 				setComponentError("whatsapp", lastDisconnect?.error ?? "connection closed");
-				startBaileysWhatsApp().catch((err) =>
-					console.error("Failed to reconnect WhatsApp:", err)
-				);
+				setTimeout(() => {
+					startBaileysWhatsApp()
+						.catch((err) => console.error("Failed to reconnect WhatsApp:", err))
+						.finally(() => {
+							isReconnecting = false;
+						});
+				}, 3000);
+			} else {
+				console.log("Reconnect already in progress, ignoring extra close event.");
 			}
 		}
 	});
