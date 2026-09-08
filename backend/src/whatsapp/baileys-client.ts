@@ -1,6 +1,6 @@
 import path from "path";
 import pino from "pino";
-import qrcodeTerminal from "qrcode-terminal";
+//import qrcodeTerminal from "qrcode-terminal";
 
 import {
 	default as makeWASocket,
@@ -62,13 +62,23 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 	});
 
 	sock.ev.on("connection.update", (update) => {
+
 		const { connection, lastDisconnect, qr } = update;
 
-		if (qr) {
-			console.log("\n========== SCAN THIS QR WITH WHATSAPP ==========");
-			qrcodeTerminal.generate(qr, { small: true });
-			console.log("WhatsApp → Settings → Linked Devices → Link a Device");
-			console.log("=================================================\n");
+		if (!sock.authState.creds.registered) {
+			const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
+			if (!phoneNumber) {
+				console.error(
+					"WHATSAPP_PHONE_NUMBER env var is not set. Set it (e.g. 66812345678, no + or spaces) to get a pairing code."
+				);
+			} else {
+				const code = await sock.requestPairingCode(phoneNumber);
+				console.log("\n========== WHATSAPP PAIRING CODE ==========");
+				console.log(`Code: ${code}`);
+				console.log("On your phone: WhatsApp → Settings → Linked Devices");
+				console.log("→ Link a Device → Link with phone number instead");
+				console.log("=============================================\n");
+			}
 		}
 
 		if (connection === "open") {
