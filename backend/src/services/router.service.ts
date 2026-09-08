@@ -1,7 +1,7 @@
 import {
     getAllConversations,
     getConversationHistory,
-    getAllConversationAnalyses,
+    getConversationAnalysis,
 } from "./conversation.service";
 
 import {
@@ -15,14 +15,14 @@ import {
 import { getRecentActivity } from "./activity.service";
 import { getSystemStatus } from "./system-status.service";
 
-export function getDashboardOverview() {
-    const conversations = getAllConversations();
-    const cases = getAllServiceCases();
-    const handoffs = getAllHumanHandoffs();
+export async function getDashboardOverview() {
+    const conversations = await getAllConversations();
+    const cases = await getAllServiceCases();
+    const handoffs = await getAllHumanHandoffs();
 
     let messageCount = 0;
 
-    for (const conversation of conversations.values()) {
+    for (const conversation of conversations) {
         messageCount += conversation.messages.length;
     }
 
@@ -41,7 +41,7 @@ export function getDashboardOverview() {
     );
 
     return {
-        conversations: conversations.size,
+        conversations: conversations.length,
         messages: messageCount,
         cases: cases.length,
         openCases: openCases.length,
@@ -50,81 +50,108 @@ export function getDashboardOverview() {
     };
 }
 
-export function getDashboardConversations() {
-    const conversations = getAllConversations();
-    const analyses = getAllConversationAnalyses();
+export async function getDashboardConversations() {
+    const conversations = await getAllConversations();
 
-    return Array.from(conversations.entries()).map(
-        ([conversationId, conversation]) => {
-            const lastMessage =
-                conversation.messages[
-                conversation.messages.length - 1
-                ] ?? null;
+    const result = [];
 
-            const analysis =
-                analyses.get(conversationId) ?? null;
+    for (const conversation of conversations) {
+        const lastMessage =
+            conversation.messages[
+            conversation.messages.length - 1
+            ] ?? null;
 
-            return {
-                channel: conversation.channel,
+        const analysis = await getConversationAnalysis(
+            conversation.conversationId,
+            conversation.channel
+        );
 
-                conversationId,
+        result.push({
+            channel: conversation.channel,
 
-                customerName: conversation.customerName,
+            conversationId:
+                conversation.conversationId,
 
-                messageCount:
-                    conversation.messages.length,
+            customerName:
+                conversation.customerName,
 
-                lastMessage,
+            messageCount:
+                conversation.messages.length,
 
-                intent:
-                    analysis?.intent ?? null,
+            lastMessage,
 
-                summary:
-                    analysis?.summary ?? null,
+            intent:
+                analysis?.intent ?? null,
 
-                conversationStatus:
-                    analysis?.conversation_status ?? null,
+            summary:
+                analysis?.summary ?? null,
 
-                action:
-                    analysis?.action ?? null,
-            };
-        }
-    );
+            conversationStatus:
+                analysis?.conversation_status ?? null,
+
+            action:
+                analysis?.action ?? null,
+        });
+    }
+
+    return result;
 }
 
-export function getDashboardConversation(
-    conversationId: string
+export async function getDashboardConversation(
+    conversationId: string,
+    channel?: "whatsapp" | "email"
 ) {
-    const conversation =
-        getAllConversations().get(conversationId);
+    const conversations = await getAllConversations();
+
+    const conversation = conversations.find(
+        (item) =>
+            item.conversationId === conversationId &&
+            (!channel || item.channel === channel)
+    );
 
     if (!conversation) {
         return null;
     }
 
     const analysis =
-        getAllConversationAnalyses().get(conversationId) ?? null;
+        await getConversationAnalysis(
+            conversationId,
+            conversation.channel
+        );
 
     return {
         channel: conversation.channel,
+
         conversationId,
-        customerName: conversation.customerName,
-        messages: getConversationHistory(
-            conversationId
-        ),
-        intent: analysis?.intent ?? null,
-        summary: analysis?.summary ?? null,
-        conversationStatus: analysis?.conversation_status ?? null,
+
+        customerName:
+            conversation.customerName,
+
+        messages:
+            await getConversationHistory(
+                conversationId,
+                conversation.channel
+            ),
+
+        intent:
+            analysis?.intent ?? null,
+
+        summary:
+            analysis?.summary ?? null,
+
+        conversationStatus:
+            analysis?.conversation_status ?? null,
+
         analysis,
     };
 }
 
-export function getDashboardCases() {
-    return getAllServiceCases();
+export async function getDashboardCases() {
+    return await getAllServiceCases();
 }
 
-export function getDashboardHandoffs() {
-    return getAllHumanHandoffs();
+export async function getDashboardHandoffs() {
+    return await getAllHumanHandoffs();
 }
 
 export function getDashboardActivity(limit?: number) {
