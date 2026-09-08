@@ -43,4 +43,12 @@ app.listen(PORT, "0.0.0.0", async () => {
             console.error("Failed to start WhatsApp (Baileys):", err)
         );
     }
+
+    if (process.env.RENDER_EXTERNAL_URL) {
+        setInterval(() => {
+            fetch(`${process.env.RENDER_EXTERNAL_URL}/api/dashboard/health`).catch(() => {
+                // ignore errors — a failed ping just means we try again next cycle
+            });
+        }, 10 * 60 * 1000);
+    }
 });
