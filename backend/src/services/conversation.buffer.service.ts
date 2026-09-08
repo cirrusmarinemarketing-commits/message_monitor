@@ -116,7 +116,10 @@ async function processBuffer(identity: ConversationIdentity) {
             console.log(`CUSTOMER: ${message.text ?? ""}`);
         }
 
-        const history = getConversationHistory(identity.conversationId);
+        const history = await getConversationHistory(
+            identity.conversationId,
+            identity.channel
+        );
 
         const turnMessageIds = new Set(
             messages
@@ -195,7 +198,11 @@ async function processBuffer(identity: ConversationIdentity) {
             return;
         }
 
-        setConversationAnalysis(identity.conversationId, analysis);
+        await setConversationAnalysis(
+            identity.conversationId,
+            identity.channel,
+            analysis
+        );
 
         console.log("\n========== AI ANALYSIS ==========");
         console.log(JSON.stringify(analysis, null, 2));
