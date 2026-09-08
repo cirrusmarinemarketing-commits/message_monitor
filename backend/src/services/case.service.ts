@@ -1,5 +1,6 @@
 import type { AIAnalysis } from "./ai.service";
 import type { Channel } from "../types/communication";
+import { pool } from "../database";
 
 export type ServiceCaseStatus =
     | "OPEN"
@@ -24,46 +25,169 @@ export type ServiceCase = {
     createdAt: string;
 };
 
-const cases = new Map<string, ServiceCase>();
-
-export function createServiceCase(
+export async function createServiceCase(
     conversationId: string,
     channel: Channel,
     customerName: string | null,
     analysis: AIAnalysis
-): ServiceCase {
+): Promise<ServiceCase> {
     const caseId = `CASE-${Date.now()}`;
 
-    const serviceCase: ServiceCase = {
-        id: caseId,
-        conversationId,
-        channel,
-        waId:
+    const result = await pool.query(
+        `
+        INSERT INTO service_cases (
+            id,
+            conversation_id,
+            channel,
+            wa_id,
+            customer_name,
+            intent,
+            equipment,
+            problem,
+            location,
+            request,
+            summary,
+            status
+        )
+        VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, 'OPEN'
+        )
+        RETURNING
+            id,
+            conversation_id,
+            channel,
+            wa_id,
+            customer_name,
+            intent,
+            equipment,
+            problem,
+            location,
+            request,
+            summary,
+            status,
+            created_at
+        `,
+        [
+            caseId,
+            conversationId,
+            channel,
             channel === "whatsapp"
                 ? conversationId
                 : null,
-        customerName,
-        intent: analysis.intent,
-        equipment: analysis.equipment,
-        problem: analysis.problem,
-        location: analysis.location,
-        request: analysis.request,
-        summary: analysis.summary,
-        status: "OPEN",
-        createdAt: new Date().toISOString(),
+            customerName,
+            analysis.intent ?? null,
+            analysis.equipment ?? null,
+            analysis.problem ?? null,
+            analysis.location ?? null,
+            analysis.request ?? null,
+            analysis.summary ?? null,
+        ]
+    );
+
+    const row = result.rows[0];
+
+    return {
+        id: row.id,
+        conversationId: row.conversation_id,
+        channel: row.channel,
+        waId: row.wa_id,
+        customerName: row.customer_name,
+        intent: row.intent,
+        equipment: row.equipment,
+        problem: row.problem,
+        location: row.location,
+        request: row.request,
+        summary: row.summary,
+        status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
     };
-
-    cases.set(caseId, serviceCase);
-
-    return serviceCase;
 }
 
-export function getServiceCase(
+export async function getServiceCase(
     caseId: string
-): ServiceCase | null {
-    return cases.get(caseId) ?? null;
+): Promise<ServiceCase | null> {
+    const result = await pool.query(
+        `
+        SELECT
+            id,
+            conversation_id,
+            channel,
+            wa_id,
+            customer_name,
+            intent,
+            equipment,
+            problem,
+            location,
+            request,
+            summary,
+            status,
+            created_at
+        FROM service_cases
+        WHERE id = $1
+        `,
+        [caseId]
+    );
+
+    if (result.rows.length === 0) {
+        return null;
+    }
+
+    const row = result.rows[0];
+
+    return {
+        id: row.id,
+        conversationId: row.conversation_id,
+        channel: row.channel,
+        waId: row.wa_id,
+        customerName: row.customer_name,
+        intent: row.intent,
+        equipment: row.equipment,
+        problem: row.problem,
+        location: row.location,
+        request: row.request,
+        summary: row.summary,
+        status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
+    };
 }
 
-export function getAllServiceCases(): ServiceCase[] {
-    return Array.from(cases.values());
+export async function getAllServiceCases(): Promise<ServiceCase[]> {
+    const result = await pool.query(
+        `
+        SELECT
+            id,
+            conversation_id,
+            channel,
+            wa_id,
+            customer_name,
+            intent,
+            equipment,
+            problem,
+            location,
+            request,
+            summary,
+            status,
+            created_at
+        FROM service_cases
+        ORDER BY created_at DESC
+        `
+    );
+
+    return result.rows.map((row) => ({
+        id: row.id,
+        conversationId: row.conversation_id,
+        channel: row.channel,
+        waId: row.wa_id,
+        customerName: row.customer_name,
+        intent: row.intent,
+        equipment: row.equipment,
+        problem: row.problem,
+        location: row.location,
+        request: row.request,
+        summary: row.summary,
+        status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
+    }));
 }

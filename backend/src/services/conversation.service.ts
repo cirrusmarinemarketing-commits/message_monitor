@@ -1,6 +1,6 @@
 import type { AIAnalysis } from "./ai.service";
 import type { Channel } from "../types/communication";
-import { query } from "../database";
+import { pool } from "../database";
 
 export type ConversationMessage = {
     role: "customer" | "cirrus";
@@ -27,26 +27,28 @@ export type ConversationRecord = {
     updatedAt: string;
 };
 
+const MAX_MESSAGES = 30;
+
 export async function addConversationMessage(
     conversationId: string,
     channel: Channel,
     message: ConversationMessage,
     customerName?: string | null
 ): Promise<boolean> {
-
-    await query(
+    await pool.query(
         `
         INSERT INTO conversations (
             conversation_id,
             channel,
-            customer_name,
-            updated_at
+            customer_name
         )
-        VALUES ($1, $2, $3, NOW())
+        VALUES ($1, $2, $3)
         ON CONFLICT (conversation_id, channel)
         DO UPDATE SET
-            customer_name =
-                COALESCE(conversations.customer_name, EXCLUDED.customer_name),
+            customer_name = COALESCE(
+                conversations.customer_name,
+                EXCLUDED.customer_name
+            ),
             updated_at = NOW()
         `,
         [
@@ -56,41 +58,28 @@ export async function addConversationMessage(
         ]
     );
 
-    if (message.id) {
-        const duplicate = await query(
-            `
-            SELECT id
-            FROM messages
-            WHERE channel = $1
-              AND external_id = $2
-            LIMIT 1
-            `,
-            [channel, message.id]
-        );
-
-        if (duplicate.rowCount && duplicate.rowCount > 0) {
-            return false;
-        }
-    }
-
-    await query(
+    const result = await pool.query(
         `
         INSERT INTO messages (
             conversation_id,
             channel,
             external_id,
             role,
-            sender_from,
-            sender_to,
-            message_timestamp,
+            sender,
+            recipient,
             message_type,
             text,
-            subject
+            subject,
+            message_timestamp
         )
         VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9, $10
         )
+        ON CONFLICT (channel, external_id)
+        WHERE external_id IS NOT NULL
+        DO NOTHING
+        RETURNING id
         `,
         [
             conversationId,
@@ -99,69 +88,59 @@ export async function addConversationMessage(
             message.role,
             message.from ?? null,
             message.to ?? null,
-            message.timestamp ?? null,
             message.type ?? null,
             message.text ?? null,
             message.subject ?? null,
+            message.timestamp ?? null,
         ]
     );
 
-    return true;
+    return result.rowCount === 1;
 }
 
 export async function getConversationHistory(
     conversationId: string,
-    channel?: Channel
+    channel: Channel
 ): Promise<ConversationMessage[]> {
-
-    const result = channel
-        ? await query(
-            `
-            SELECT
-                role,
-                external_id,
-                sender_from,
-                sender_to,
-                message_timestamp,
-                message_type,
-                text,
-                subject
-            FROM messages
-            WHERE conversation_id = $1
-              AND channel = $2
-            ORDER BY message_timestamp ASC NULLS LAST, id ASC
-            `,
-            [conversationId, channel]
-        )
-        : await query(
-            `
-            SELECT
-                role,
-                external_id,
-                sender_from,
-                sender_to,
-                message_timestamp,
-                message_type,
-                text,
-                subject
-            FROM messages
-            WHERE conversation_id = $1
-            ORDER BY message_timestamp ASC NULLS LAST, id ASC
-            `,
-            [conversationId]
-        );
+    const result = await pool.query(
+        `
+        SELECT
+            external_id,
+            role,
+            sender,
+            recipient,
+            message_type,
+            text,
+            subject,
+            message_timestamp
+        FROM messages
+        WHERE conversation_id = $1
+          AND channel = $2
+        ORDER BY
+            COALESCE(message_timestamp, created_at) ASC,
+            id ASC
+        LIMIT $3
+        `,
+        [
+            conversationId,
+            channel,
+            MAX_MESSAGES,
+        ]
+    );
 
     return result.rows.map((row) => ({
         role: row.role,
         id: row.external_id,
-        from: row.sender_from,
-        to: row.sender_to,
-        timestamp: row.message_timestamp,
+        from: row.sender,
+        to: row.recipient,
+        timestamp: row.message_timestamp
+            ? new Date(row.message_timestamp).toISOString()
+            : null,
         type: row.message_type,
         text: row.text,
         subject: row.subject,
+        channel,
         conversationId,
-        channel: channel ?? null,
     }));
 }
 
@@ -170,8 +149,7 @@ export async function setConversationAnalysis(
     channel: Channel,
     analysis: AIAnalysis
 ): Promise<void> {
-
-    await query(
+    await pool.query(
         `
         INSERT INTO conversation_analyses (
             conversation_id,
@@ -187,11 +165,13 @@ export async function setConversationAnalysis(
             customer_position,
             cirrus_position,
             pending_action,
-            conversation_status
+            conversation_status,
+            analyzed_at
         )
         VALUES (
-            $1,$2,$3,$4,$5,$6,$7,
-            $8,$9,$10,$11,$12,$13,$14
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, NOW()
         )
         ON CONFLICT (conversation_id, channel)
         DO UPDATE SET
@@ -207,23 +187,23 @@ export async function setConversationAnalysis(
             cirrus_position = EXCLUDED.cirrus_position,
             pending_action = EXCLUDED.pending_action,
             conversation_status = EXCLUDED.conversation_status,
-            created_at = NOW()
+            analyzed_at = NOW()
         `,
         [
             conversationId,
             channel,
-            analysis.intent,
-            analysis.action,
-            analysis.equipment,
-            analysis.problem,
-            analysis.location,
-            analysis.request,
-            analysis.amount,
-            analysis.summary,
-            analysis.customer_position,
-            analysis.cirrus_position,
-            analysis.pending_action,
-            analysis.conversation_status,
+            analysis.intent ?? null,
+            analysis.action ?? null,
+            analysis.equipment ?? null,
+            analysis.problem ?? null,
+            analysis.location ?? null,
+            analysis.request ?? null,
+            analysis.amount ?? null,
+            analysis.summary ?? null,
+            analysis.customer_position ?? null,
+            analysis.cirrus_position ?? null,
+            analysis.pending_action ?? null,
+            analysis.conversation_status ?? null,
         ]
     );
 }
@@ -232,74 +212,86 @@ export async function getConversationAnalysis(
     conversationId: string,
     channel: Channel
 ): Promise<AIAnalysis | null> {
-
-    const result = await query(
+    const result = await pool.query(
         `
-        SELECT *
+        SELECT
+            intent,
+            action,
+            equipment,
+            problem,
+            location,
+            request,
+            amount,
+            summary,
+            customer_position,
+            cirrus_position,
+            pending_action,
+            conversation_status
         FROM conversation_analyses
         WHERE conversation_id = $1
           AND channel = $2
-        LIMIT 1
         `,
-        [conversationId, channel]
+        [
+            conversationId,
+            channel,
+        ]
     );
 
-    if (!result.rowCount) {
+    if (result.rows.length === 0) {
         return null;
     }
 
-    const row = result.rows[0];
+    return result.rows[0] as AIAnalysis;
+}
 
-    return {
-        intent: row.intent,
-        action: row.action,
-        equipment: row.equipment,
-        problem: row.problem,
-        location: row.location,
-        request: row.request,
-        amount: row.amount,
-        summary: row.summary,
-        customer_position: row.customer_position,
-        cirrus_position: row.cirrus_position,
-        pending_action: row.pending_action,
-        conversation_status: row.conversation_status,
-    };
+export async function clearConversation(
+    conversationId: string,
+    channel: Channel
+): Promise<void> {
+    await pool.query(
+        `
+        DELETE FROM conversations
+        WHERE conversation_id = $1
+          AND channel = $2
+        `,
+        [
+            conversationId,
+            channel,
+        ]
+    );
 }
 
 export async function getAllConversations(): Promise<
-    Map<string, ConversationRecord>
+    ConversationRecord[]
 > {
-    const conversationsResult = await query(
+    const result = await pool.query(
         `
         SELECT
-            conversation_id,
-            channel,
-            customer_name,
-            updated_at
-        FROM conversations
-        ORDER BY updated_at DESC
+            c.conversation_id,
+            c.channel,
+            c.customer_name,
+            c.updated_at
+        FROM conversations c
+        ORDER BY c.updated_at DESC
         `
     );
 
-    const result = new Map<string, ConversationRecord>();
+    const conversations: ConversationRecord[] = [];
 
-    for (const row of conversationsResult.rows) {
+    for (const row of result.rows) {
         const messages = await getConversationHistory(
             row.conversation_id,
             row.channel
         );
 
-        result.set(
-            `${row.conversation_id}:${row.channel}`,
-            {
-                conversationId: row.conversation_id,
-                channel: row.channel,
-                customerName: row.customer_name,
-                messages,
-                updatedAt: row.updated_at,
-            }
-        );
+        conversations.push({
+            conversationId: row.conversation_id,
+            channel: row.channel,
+            customerName: row.customer_name,
+            messages,
+            updatedAt: new Date(row.updated_at).toISOString(),
+        });
     }
 
-    return result;
+    return conversations;
 }
