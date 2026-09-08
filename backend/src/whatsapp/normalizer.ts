@@ -17,6 +17,6 @@ export function normalizeWhatsAppMessage(
         conversationId: input.waId,
         sender: input.from,
         text: input.text,
-        timestamp: input.timestamp,
+        timestamp: new Date(Number(input.timestamp) * 1000).toISOString(),
     };
 }
