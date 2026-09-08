@@ -61,7 +61,7 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 		);
 	});
 
-	sock.ev.on("connection.update", (update) => {
+	sock.ev.on("connection.update", async (update) => {
 
 		const { connection, lastDisconnect, qr } = update;
 
