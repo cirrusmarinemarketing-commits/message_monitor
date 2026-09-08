@@ -12,23 +12,32 @@ import {
 
 const router = Router();
 
-router.get("/overview", (_req, res) => {
+router.get("/overview", async (_req, res) => {
     res.json({
         success: true,
-        data: getDashboardOverview(),
+        data: await getDashboardOverview(),
     });
 });
 
-router.get("/conversations", (_req, res) => {
+router.get("/conversations", async (_req, res) => {
     res.json({
         success: true,
-        data: getDashboardConversations(),
+        data: await getDashboardConversations(),
     });
 });
 
-router.get("/conversations/:conversationId", (req, res) => {
+router.get("/conversations/:conversationId", async (req, res) => {
+    const channel =
+        req.query.channel === "email" ||
+            req.query.channel === "whatsapp"
+            ? req.query.channel
+            : undefined;
+
     const conversation =
-        getDashboardConversation(req.params.conversationId);
+        await getDashboardConversation(
+            req.params.conversationId,
+            channel
+        );
 
     if (!conversation) {
         return res.status(404).json({
@@ -43,17 +52,17 @@ router.get("/conversations/:conversationId", (req, res) => {
     });
 });
 
-router.get("/cases", (_req, res) => {
+router.get("/cases", async (_req, res) => {
     res.json({
         success: true,
-        data: getDashboardCases(),
+        data: await getDashboardCases(),
     });
 });
 
-router.get("/handoffs", (_req, res) => {
+router.get("/handoffs", async (_req, res) => {
     res.json({
         success: true,
-        data: getDashboardHandoffs(),
+        data: await getDashboardHandoffs(),
     });
 });
 
@@ -63,7 +72,9 @@ router.get("/activity", (req, res) => {
     res.json({
         success: true,
         data: getDashboardActivity(
-            Number.isFinite(limit) && limit > 0 ? limit : undefined
+            Number.isFinite(limit) && limit > 0
+                ? limit
+                : undefined
         ),
     });
 });
