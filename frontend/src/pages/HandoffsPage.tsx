@@ -66,7 +66,7 @@ function HandoffsPage({ handoffs, onSelect }: HandoffsPageProps) {
   }, [filtered])
 
   return (
-    <div className="panel panel-flush">
+    <div className="panel panel-flush page-panel">
       <div className="panel-header inbox-header">
         <div>
           <h2>Human Handoffs</h2>

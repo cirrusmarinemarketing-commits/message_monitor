@@ -43,11 +43,14 @@ function ConversationDrawer({
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // No synchronous setState here: this component is fully remounted on
+    // conversationId/channel change (see the `key` prop in App.tsx), so
+    // the loading/error useState initializers above already give a fresh
+    // "loading, no error" state for every conversation without needing to
+    // reset it again here.
     let cancelled = false
-    setLoading(true)
-    setError('')
 
-    getDashboardConversation(conversationId)
+    getDashboardConversation(conversationId, channel)
       .then((data) => {
         if (cancelled) return
         setDetail(data)
@@ -64,7 +67,7 @@ function ConversationDrawer({
     return () => {
       cancelled = true
     }
-  }, [conversationId])
+  }, [conversationId, channel])
 
   const analysis = detail?.analysis ?? null
   const intentMeta = getIntentMeta(analysis?.intent ?? detail?.intent)

@@ -9,8 +9,15 @@ type SearchInputProps = {
 /** Debounces upward onChange calls so typing doesn't re-filter on every keystroke. */
 function SearchInput({ value, onChange, placeholder }: SearchInputProps) {
   const [draft, setDraft] = useState(value)
+  // Adjust state during render (React's recommended pattern for mirroring
+  // a prop into local state) instead of an effect that calls setState
+  // synchronously.
+  const [prevValue, setPrevValue] = useState(value)
 
-  useEffect(() => setDraft(value), [value])
+  if (value !== prevValue) {
+    setPrevValue(value)
+    setDraft(value)
+  }
 
   useEffect(() => {
     if (draft === value) return

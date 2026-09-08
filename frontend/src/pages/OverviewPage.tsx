@@ -24,6 +24,7 @@ type OverviewPageProps = {
   activity: ActivityEvent[]
   health: SystemHealth | null
   onSelectConversation: (conversation: ConversationSummary) => void
+  onSelectCase: (item: ServiceCase) => void
   onNavigateInbox: (filter: InboxFilter) => void
 }
 
@@ -49,6 +50,7 @@ function OverviewPage({
   activity,
   health,
   onSelectConversation,
+  onSelectCase,
   onNavigateInbox,
 }: OverviewPageProps) {
   const openCaseConversationKeys = useMemo(
@@ -104,7 +106,12 @@ function OverviewPage({
       const bt = b.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0
       return bt - at
     })
-    .slice(0, 6)
+    .slice(0, 8)
+
+  const openCases = [...cases]
+    .filter((item) => isOpenCaseStatus(item.status))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 8)
 
   const whatsappLast = conversations
     .filter((c) => c.channel === 'whatsapp')
@@ -179,92 +186,8 @@ function OverviewPage({
         <KpiCard label="Total messages" value={overview?.messages ?? '—'} />
       </div>
 
-      {/* ===== System health ===== */}
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>System health</h2>
-            <span>Ingestion and processing status</span>
-          </div>
-        </div>
-
-        {!health ? (
-          <EmptyState title="Health data unavailable" />
-        ) : (
-          <div className="health-grid">
-            {(Object.keys(HEALTH_COMPONENT_LABEL) as (keyof typeof HEALTH_COMPONENT_LABEL)[]).map((name) => {
-              const status = health[name as keyof SystemHealth]
-              return (
-                <div className="health-card" key={name}>
-                  <div className="health-card-top">
-                    <span>{HEALTH_COMPONENT_LABEL[name]}</span>
-                    <StatusBadge status={status.state} />
-                  </div>
-                  <span className="health-card-meta">
-                    {status.lastEventAt
-                      ? `Last event ${formatRelativeTime(status.lastEventAt)}`
-                      : 'No events yet'}
-                  </span>
-                  {status.lastError && (
-                    <span className="health-card-error">{status.lastError}</span>
-                  )}
-                </div>
-              )
-            })}
-
-            <div className="health-card">
-              <div className="health-card-top">
-                <span>
-                  <ChannelBadge channel="whatsapp" compact /> channel activity
-                </span>
-              </div>
-              <span className="health-card-meta">
-                {whatsappLast ? `Last message ${formatRelativeTime(whatsappLast)}` : 'No messages yet'}
-              </span>
-            </div>
-
-            <div className="health-card">
-              <div className="health-card-top">
-                <span>
-                  <ChannelBadge channel="email" compact /> channel activity
-                </span>
-              </div>
-              <span className="health-card-meta">
-                {emailLast ? `Last message ${formatRelativeTime(emailLast)}` : 'No messages yet'}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ===== Recent activity + recent conversations ===== */}
-      <div className="two-col">
-        <div className="panel">
-          <div className="panel-header">
-            <h2>Recent activity</h2>
-            <span>{activity.length} events</span>
-          </div>
-
-          {activity.length === 0 ? (
-            <EmptyState title="No activity yet" description="Events will appear as messages flow through the pipeline." />
-          ) : (
-            <div className="activity-feed activity-feed-compact">
-              {activity.slice(0, 8).map((event) => (
-                <div className="activity-row" key={event.id}>
-                  <ChannelBadge channel={event.channel} compact />
-                  <div className="activity-row-content">
-                    <span className="activity-row-message">{event.message}</span>
-                    <span className="activity-row-meta">
-                      {event.type.replace(/_/g, ' ')} · {formatRelativeTime(event.timestamp)}
-                    </span>
-                  </div>
-                  {event.status === 'error' && <StatusBadge status="error" />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
+      {/* ===== Main operational area: priority conversations | open cases | system health ===== */}
+      <div className="three-col">
         <div className="panel">
           <div className="panel-header">
             <h2>Recent conversations</h2>
@@ -274,7 +197,7 @@ function OverviewPage({
           {recentConversations.length === 0 ? (
             <EmptyState title="No conversations yet" />
           ) : (
-            <div className="conversation-list">
+            <div className="conversation-list conversation-list-compact">
               {recentConversations.map((conversation) => {
                 const meta = getChannelMeta(conversation.channel)
                 return (
@@ -302,6 +225,119 @@ function OverviewPage({
             </div>
           )}
         </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h2>Open cases</h2>
+            <span>{overview?.openCases ?? cases.length}</span>
+          </div>
+
+          {openCases.length === 0 ? (
+            <EmptyState title="No open cases" />
+          ) : (
+            <div className="mini-case-list">
+              {openCases.map((item) => (
+                <div className="mini-case-row clickable" key={item.id} onClick={() => onSelectCase(item)}>
+                  <div className="mini-case-top">
+                    <ChannelBadge channel={item.channel} compact />
+                    <strong>{item.customerName ?? item.conversationId}</strong>
+                  </div>
+                  <p>{item.equipment ?? item.summary ?? item.request ?? 'No summary'}</p>
+                  <span className="mini-case-meta">{formatRelativeTime(item.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>System health</h2>
+              <span>Ingestion &amp; processing</span>
+            </div>
+          </div>
+
+          {!health ? (
+            <EmptyState title="Health data unavailable" />
+          ) : (
+            <div className="health-grid health-grid-compact">
+              {(Object.keys(HEALTH_COMPONENT_LABEL) as (keyof typeof HEALTH_COMPONENT_LABEL)[]).map((name) => {
+                const status = health[name as keyof SystemHealth]
+                return (
+                  <div className="health-card" key={name}>
+                    <div className="health-card-top">
+                      <span>{HEALTH_COMPONENT_LABEL[name]}</span>
+                      <StatusBadge status={status.state} />
+                    </div>
+                    <span className="health-card-meta">
+                      {status.lastEventAt
+                        ? `Last event ${formatRelativeTime(status.lastEventAt)}`
+                        : 'No events yet'}
+                    </span>
+                    {status.lastError && (
+                      <span className="health-card-error">{status.lastError}</span>
+                    )}
+                  </div>
+                )
+              })}
+
+              <div className="health-card">
+                <div className="health-card-top">
+                  <span>
+                    <ChannelBadge channel="whatsapp" compact /> channel
+                  </span>
+                </div>
+                <span className="health-card-meta">
+                  {whatsappLast ? `Last message ${formatRelativeTime(whatsappLast)}` : 'No messages yet'}
+                </span>
+              </div>
+
+              <div className="health-card">
+                <div className="health-card-top">
+                  <span>
+                    <ChannelBadge channel="email" compact /> channel
+                  </span>
+                </div>
+                <span className="health-card-meta">
+                  {emailLast ? `Last message ${formatRelativeTime(emailLast)}` : 'No messages yet'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Activity stream =====
+          Kept as its own full-width chronological section (rather than
+          folded into the 3-col grid above) so it reads top-to-bottom
+          uninterrupted - this is also the natural slot for a future
+          conversation-volume/intent-distribution chart alongside it,
+          without touching the 3-col operational grid above. */}
+      <div className="panel">
+        <div className="panel-header">
+          <h2>Recent activity</h2>
+          <span>{activity.length} events</span>
+        </div>
+
+        {activity.length === 0 ? (
+          <EmptyState title="No activity yet" description="Events will appear as messages flow through the pipeline." />
+        ) : (
+          <div className="activity-feed activity-feed-compact">
+            {activity.slice(0, 10).map((event) => (
+              <div className="activity-row" key={event.id}>
+                <ChannelBadge channel={event.channel} compact />
+                <div className="activity-row-content">
+                  <span className="activity-row-message">{event.message}</span>
+                  <span className="activity-row-meta">
+                    {event.type.replace(/_/g, ' ')} · {formatRelativeTime(event.timestamp)}
+                  </span>
+                </div>
+                {event.status === 'error' && <StatusBadge status="error" />}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )

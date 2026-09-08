@@ -151,6 +151,7 @@ function App() {
                   activity={activity}
                   health={health}
                   onSelectConversation={handleSelectConversation}
+                  onSelectCase={handleSelectCase}
                   onNavigateInbox={handleNavigateInbox}
                 />
               )}

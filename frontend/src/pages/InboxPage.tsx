@@ -56,7 +56,23 @@ function InboxPage({ conversations, cases, handoffs, initialFilter, onSelect }: 
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortMode>('priority')
 
-  useEffect(() => setFilter(initialFilter), [initialFilter])
+  // Adjust state during render instead of an effect that calls setState
+  // synchronously (React's recommended pattern for mirroring a prop into
+  // local state that the user can still change afterward).
+  const [prevInitialFilter, setPrevInitialFilter] = useState(initialFilter)
+  if (initialFilter !== prevInitialFilter) {
+    setPrevInitialFilter(initialFilter)
+    setFilter(initialFilter)
+  }
+
+  // A ticking "now" in state (not a bare Date.now() read during render)
+  // so the "new message" indicator actually re-evaluates as time passes,
+  // instead of only when some other prop happens to change.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const openCaseKeys = useMemo(
     () =>
@@ -97,10 +113,10 @@ function InboxPage({ conversations, cases, handoffs, initialFilter, onSelect }: 
           isNew:
             !hasOpenCase &&
             !hasOpenHandoff &&
-            lastActivityAt(conversation) > Date.now() - 5 * 60 * 1000,
+            lastActivityAt(conversation) > now - 5 * 60 * 1000,
         }
       }),
-    [conversations, openCaseKeys, openHandoffKeys],
+    [conversations, openCaseKeys, openHandoffKeys, now],
   )
 
   const filtered = useMemo(() => {
@@ -164,7 +180,7 @@ function InboxPage({ conversations, cases, handoffs, initialFilter, onSelect }: 
   }, [enriched])
 
   return (
-    <div className="panel panel-flush">
+    <div className="panel panel-flush page-panel">
       <div className="panel-header inbox-header">
         <div>
           <h2>Inbox</h2>

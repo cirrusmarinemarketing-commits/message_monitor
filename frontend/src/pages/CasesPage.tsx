@@ -62,7 +62,7 @@ function CasesPage({ cases, onSelect }: CasesPageProps) {
   )
 
   return (
-    <div className="panel panel-flush">
+    <div className="panel panel-flush page-panel">
       <div className="panel-header inbox-header">
         <div>
           <h2>Service Cases</h2>

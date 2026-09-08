@@ -41,20 +41,23 @@ body {
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
+  overflow: hidden;
 }
 
 /* ==================== Sidebar ==================== */
 
 .sidebar {
   width: 240px;
+  height: 100%;
   background: var(--color-sidebar-bg);
   color: #fff;
   padding: var(--space-6) var(--space-4);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .brand {
@@ -188,13 +191,18 @@ nav a.active .nav-count {
 .main {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
-  min-height: 80px;
+  min-height: 60px;
+  flex-shrink: 0;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  padding: var(--space-4) var(--space-8);
+  padding: var(--space-3) var(--space-6);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -204,18 +212,27 @@ nav a.active .nav-count {
 
 .topbar h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .topbar p {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .content {
-  padding: var(--space-8);
-  max-width: 1280px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5) var(--space-6);
+  max-width: 2000px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 /* ==================== Freshness bar ==================== */
@@ -271,18 +288,19 @@ nav a.active .nav-count {
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-4);
+  gap: var(--space-3);
+  flex-shrink: 0;
 }
 
 .stats-dense {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .kpi-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
   border-left: 3px solid transparent;
 }
 
@@ -311,19 +329,23 @@ nav a.active .nav-count {
 .kpi-label {
   display: block;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-value {
   display: block;
-  margin-top: var(--space-2);
-  font-size: 26px;
+  margin-top: 2px;
+  font-size: 20px;
+  line-height: 1.2;
 }
 
 .kpi-hint {
   display: block;
-  margin-top: var(--space-1);
-  font-size: 11px;
+  margin-top: 1px;
+  font-size: 10px;
   color: var(--color-text-faint);
 }
 
@@ -333,19 +355,20 @@ nav a.active .nav-count {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  margin-top: var(--space-6);
-  padding: var(--space-6);
+  margin-top: var(--space-4);
+  padding: var(--space-4);
   min-height: 120px;
+  flex-shrink: 0;
 }
 
 .panel-flush {
-  padding: var(--space-5) 0 0;
+  padding: var(--space-4) 0 0;
   overflow: hidden;
 }
 
 .panel h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .panel-header {
@@ -353,24 +376,62 @@ nav a.active .nav-count {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
-  padding: 0 var(--space-6);
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-4);
+  flex-shrink: 0;
 }
 
 .panel-flush .panel-header {
-  padding: 0 var(--space-6);
+  padding: 0 var(--space-4);
 }
 
 .panel-header span {
   color: var(--color-text-faint);
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
+}
+
+/* A page whose whole content is a single dense list (Inbox/Cases/
+   Handoffs/Activity): the panel fills the remaining viewport height and
+   only its own list body scrolls, while header/filters stay pinned. */
+.page-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-panel .inbox-list,
+.page-panel .record-list,
+.page-panel .activity-feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.page-panel .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.three-col {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.three-col .panel {
+  margin-top: 0;
 }
 
 .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-6);
+  gap: var(--space-4);
 }
 
 .two-col .panel {
@@ -489,6 +550,68 @@ nav a.active .nav-count {
   font-size: 11px;
 }
 
+/* ==================== Mini case list (overview, 3-col) ==================== */
+
+.mini-case-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.mini-case-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.mini-case-row.clickable {
+  cursor: pointer;
+}
+
+.mini-case-row.clickable:hover {
+  border-color: #c7d2fe;
+  background: #f9fafb;
+}
+
+.mini-case-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.mini-case-row p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mini-case-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--color-text-faint);
+}
+
+.conversation-list-compact,
+.health-grid-compact {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.health-grid-compact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /* ==================== Conversation list (overview) ==================== */
 
 .conversation-list {
@@ -565,7 +688,7 @@ nav a.active .nav-count {
 .activity-feed {
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-6) var(--space-6);
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .activity-feed-compact {
@@ -634,8 +757,9 @@ nav a.active .nav-count {
 }
 
 .inbox-filters {
-  padding: 0 var(--space-6) var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .filter-chips {
@@ -688,7 +812,7 @@ nav a.active .nav-count {
   grid-template-columns: 220px 1fr auto auto;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-border-soft);
   cursor: pointer;
 }
@@ -770,7 +894,7 @@ nav a.active .nav-count {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: 0 var(--space-6) var(--space-6);
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .record-card {
@@ -1162,22 +1286,32 @@ nav a.active .nav-count {
 
 /* ==================== Responsive ==================== */
 
-@media (max-width: 1200px) {
-  .stats-dense {
-    grid-template-columns: repeat(3, 1fr);
+@media (max-width: 1300px) {
+  .three-col {
+    grid-template-columns: 1fr 1fr;
   }
 
+  .three-col .panel:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1200px) {
   .two-col {
     grid-template-columns: 1fr;
+  }
+
+  .three-col {
+    grid-template-columns: 1fr;
+  }
+
+  .three-col .panel:nth-child(3) {
+    grid-column: auto;
   }
 }
 
 @media (max-width: 960px) {
   .stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .stats-dense {
     grid-template-columns: repeat(2, 1fr);
   }
 
