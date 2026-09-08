@@ -36,13 +36,15 @@ export function ingestNormalizedMessage(
         channel: normalized.channel,
         subject: normalized.subject ?? null,
         conversationId: normalized.conversationId,
+        senderName: normalized.senderName ?? null,
     };
 
     const added = addConversationMessage(
         normalized.conversationId,
         normalized.channel,
         message,
-        customerName
+        customerName,
+        normalized.groupId ?? null
     );
 
     if (!added) {

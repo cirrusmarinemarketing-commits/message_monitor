@@ -116,6 +116,9 @@ function ConversationDrawer({
                     key={message.id ?? index}
                     className={`bubble bubble-${message.role}`}
                   >
+                    {message.senderName && (
+                      <span className="bubble-sender">{message.senderName}</span>
+                    )}
                     {message.subject && (
                       <span className="bubble-subject">{message.subject}</span>
                     )}

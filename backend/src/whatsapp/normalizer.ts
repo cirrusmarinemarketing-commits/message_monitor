@@ -6,6 +6,8 @@ type WhatsAppMessageInput = {
     from: string;
     text: string;
     timestamp: string;
+    groupId?: string | null;
+    senderName?: string | null;
 };
 
 export function normalizeWhatsAppMessage(
@@ -18,5 +20,7 @@ export function normalizeWhatsAppMessage(
         sender: input.from,
         text: input.text,
         timestamp: new Date(Number(input.timestamp) * 1000).toISOString(),
+        groupId: input.groupId ?? null,
+        senderName: input.senderName ?? null,
     };
 }

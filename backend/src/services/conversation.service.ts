@@ -4,18 +4,15 @@ import { pool } from "../database";
 
 export type ConversationMessage = {
     role: "customer" | "cirrus";
-
+    senderName?: string | null;
     id?: string | null;
     from?: string | null;
     to?: string | null;
-
     timestamp?: string | null;
     type?: string | null;
     text?: string | null;
-
     channel?: Channel | null;
     subject?: string | null;
-
     conversationId?: string | null;
 };
 
@@ -23,6 +20,7 @@ export type ConversationRecord = {
     conversationId: string;
     channel: Channel;
     customerName: string | null;
+    groupId: string | null;
     messages: ConversationMessage[];
     updatedAt: string;
 };
@@ -33,21 +31,27 @@ export async function addConversationMessage(
     conversationId: string,
     channel: Channel,
     message: ConversationMessage,
-    customerName?: string | null
+    customerName?: string | null,
+    groupId?: string | null
 ): Promise<boolean> {
     await pool.query(
         `
         INSERT INTO conversations (
             conversation_id,
             channel,
-            customer_name
+            customer_name,
+            group_id
         )
-        VALUES ($1, $2, $3)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (conversation_id, channel)
         DO UPDATE SET
             customer_name = COALESCE(
                 conversations.customer_name,
                 EXCLUDED.customer_name
+            ),
+            group_id = COALESCE(
+                conversations.group_id,
+                EXCLUDED.group_id
             ),
             updated_at = NOW()
         `,
@@ -55,6 +59,7 @@ export async function addConversationMessage(
             conversationId,
             channel,
             customerName ?? null,
+            groupId ?? null,
         ]
     );
 
@@ -70,11 +75,12 @@ export async function addConversationMessage(
             message_type,
             text,
             subject,
-            message_timestamp
+            message_timestamp,
+            sender_name
         )
         VALUES (
             $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10
+            $6, $7, $8, $9, $10, $11
         )
         ON CONFLICT (channel, external_id)
         WHERE external_id IS NOT NULL
@@ -92,6 +98,7 @@ export async function addConversationMessage(
             message.text ?? null,
             message.subject ?? null,
             message.timestamp ?? null,
+            message.senderName ?? null,
         ]
     );
 
@@ -112,7 +119,8 @@ export async function getConversationHistory(
             message_type,
             text,
             subject,
-            message_timestamp
+            message_timestamp,
+            sender_name
         FROM messages
         WHERE conversation_id = $1
           AND channel = $2
@@ -121,12 +129,24 @@ export async function getConversationHistory(
             id ASC
         LIMIT $3
         `,
-        [
-            conversationId,
-            channel,
-            MAX_MESSAGES,
-        ]
+        [conversationId, channel, MAX_MESSAGES]
     );
+
+    return result.rows.map((row) => ({
+        role: row.role,
+        senderName: row.sender_name,
+        id: row.external_id,
+        from: row.sender,
+        to: row.recipient,
+        timestamp: row.message_timestamp
+            ? new Date(row.message_timestamp).toISOString()
+            : null,
+        type: row.message_type,
+        text: row.text,
+        subject: row.subject,
+        channel,
+        conversationId,
+    }));
 
     return result.rows.map((row) => ({
         role: row.role,
@@ -270,6 +290,7 @@ export async function getAllConversations(): Promise<
             c.conversation_id,
             c.channel,
             c.customer_name,
+            c.group_id,
             c.updated_at
         FROM conversations c
         ORDER BY c.updated_at DESC
@@ -288,6 +309,7 @@ export async function getAllConversations(): Promise<
             conversationId: row.conversation_id,
             channel: row.channel,
             customerName: row.customer_name,
+            groupId: row.group_id,
             messages,
             updatedAt: new Date(row.updated_at).toISOString(),
         });

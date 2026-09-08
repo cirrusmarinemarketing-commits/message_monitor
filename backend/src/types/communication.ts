@@ -11,4 +11,6 @@ export type NormalizedMessage = {
     subject?: string | null;
     text: string;
     timestamp: string;
+    groupId?: string | null;
+    senderName?: string | null;
 };

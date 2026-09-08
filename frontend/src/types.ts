@@ -33,6 +33,7 @@ export type Overview = {
 
 export type Message = {
   role: 'customer' | 'cirrus'
+  senderName?: string | null
   id?: string | null
   from?: string | null
   to?: string | null

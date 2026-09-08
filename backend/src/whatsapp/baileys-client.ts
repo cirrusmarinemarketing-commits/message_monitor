@@ -18,6 +18,7 @@ import {
 	setComponentOffline,
 } from "../services/system-status.service";
 import { restoreAuthFolder, backupAuthFolder } from "./auth-store";
+import { isStaffNumber, getStaffName } from "../services/staff-contacts.service";
 
 /**
  * Unofficial WhatsApp connection using Baileys (speaks the same protocol
@@ -142,7 +143,7 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 		}
 	});
 
-	sock.ev.on("messages.upsert", ({ messages, type }) => {
+	sock.ev.on("messages.upsert", async ({ messages, type }) => {
 		if (type !== "notify") return;
 
 		for (const msg of messages) {
@@ -154,32 +155,48 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 			const text = extractText(msg);
 			if (text === null) continue;
 
+			const isGroup = jid.endsWith("@g.us");
 			const waId = jid.split("@")[0] ?? jid;
+
+			// ในกลุ่ม ผู้ส่งจริงอยู่ที่ msg.key.participant ไม่ใช่ remoteJid (ซึ่งเป็น jid ของกลุ่ม)
+			const senderJid = isGroup ? (msg.key.participant ?? jid) : jid;
+			const senderNumber = senderJid.split("@")[0] ?? senderJid;
+
 			const isFromMe = !!msg.key.fromMe;
-			const customerName = isFromMe ? undefined : msg.pushName || null;
+			const isStaff = isFromMe || (await isStaffNumber(senderNumber));
+
+			const displayName = isFromMe
+				? "You"
+				: msg.pushName || (await getStaffName(senderNumber)) || senderNumber;
+
+			const customerName = isStaff ? undefined : displayName;
 
 			const normalized = normalizeWhatsAppMessage({
 				messageId: msg.key.id ?? `baileys-${Date.now()}`,
 				waId,
-				from: isFromMe ? "business" : waId,
+				from: isStaff ? "cirrus" : senderNumber,
 				text,
 				timestamp: String(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
+				groupId: isGroup ? jid : null,
+				senderName: displayName,
 			});
 
 			recordActivity({
 				channel: "whatsapp",
-				type: isFromMe ? "whatsapp_sent" : "whatsapp_received",
+				type: isStaff ? "whatsapp_sent" : "whatsapp_received",
 				conversationId: waId,
 				customerName: customerName ?? null,
 				status: "success",
-				message: isFromMe
-					? "WhatsApp reply sent from linked phone (unofficial/Baileys)"
+				message: isStaff
+					? "WhatsApp reply sent (unofficial/Baileys)"
 					: "WhatsApp message received (unofficial/Baileys)",
 			});
 
 			ingestNormalizedMessage(normalized, {
 				customerName,
-				role: isFromMe ? "business" : "customer",
+				role: isStaff ? "cirrus" : "customer",
+			})?.catch((err) => {
+				console.error("Failed to process WhatsApp message (ignored, service stays up):", err);
 			});
 		}
 	});

@@ -174,7 +174,7 @@ nav a.active .nav-count {
   margin-right: var(--space-1);
 }
 
-.sidebar-channel-dot + .sidebar-channel-dot {
+.sidebar-channel-dot+.sidebar-channel-dot {
   margin-left: var(--space-3);
 }
 
@@ -1158,6 +1158,22 @@ nav a.active .nav-count {
   border-bottom-right-radius: 2px;
 }
 
+.bubble-sender {
+  display: block;
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 4px;
+  opacity: 0.75;
+}
+
+.bubble-customer .bubble-sender {
+  color: var(--color-text-muted);
+}
+
+.bubble-cirrus .bubble-sender {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* ==================== States ==================== */
 
 .empty-state {
@@ -1254,6 +1270,7 @@ nav a.active .nav-count {
   0% {
     background-position: 100% 0;
   }
+
   100% {
     background-position: 0 0;
   }
