@@ -1,13 +1,25 @@
 import fs from "fs/promises";
 import path from "path";
 import { google } from "googleapis";
+
 import { normalizeGmailMessage } from "./normalizer";
+import {
+    getGmailState,
+    saveGmailState,
+} from "./gmail-state.service";
+
 import { ingestNormalizedMessage } from "../services/pipeline.service";
 import { recordActivity } from "../services/activity.service";
 
-const TOKEN_PATH = path.join(process.cwd(), "token.json");
-const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
-const STATE_PATH = path.join(process.cwd(), "gmail-state.json");
+const TOKEN_PATH = path.join(
+    process.cwd(),
+    "token.json"
+);
+
+const CREDENTIALS_PATH = path.join(
+    process.cwd(),
+    "credentials.json"
+);
 
 function decodeBase64Url(data: string): string {
     return Buffer.from(
@@ -37,10 +49,17 @@ function htmlToText(html: string): string {
 }
 
 function findBody(payload: any): string {
-    if (!payload) return "";
+    if (!payload) {
+        return "";
+    }
 
-    if (payload.mimeType === "text/plain" && payload.body?.data) {
-        return decodeBase64Url(payload.body.data).trim();
+    if (
+        payload.mimeType === "text/plain" &&
+        payload.body?.data
+    ) {
+        return decodeBase64Url(
+            payload.body.data
+        ).trim();
     }
 
     if (payload.parts) {
@@ -56,21 +75,26 @@ function findBody(payload: any): string {
             }
         }
 
-        // Fallback to HTML
+        // Then try nested parts
+        for (const part of payload.parts) {
+            const nestedBody = findBody(part);
+
+            if (nestedBody) {
+                return nestedBody;
+            }
+        }
+
+        // Finally fallback to HTML
         for (const part of payload.parts) {
             if (
                 part.mimeType === "text/html" &&
                 part.body?.data
             ) {
                 return htmlToText(
-                    decodeBase64Url(part.body.data)
+                    decodeBase64Url(
+                        part.body.data
+                    )
                 );
-            }
-
-            const nestedBody = findBody(part);
-
-            if (nestedBody) {
-                return nestedBody;
             }
         }
     }
@@ -80,7 +104,9 @@ function findBody(payload: any): string {
         payload.body?.data
     ) {
         return htmlToText(
-            decodeBase64Url(payload.body.data)
+            decodeBase64Url(
+                payload.body.data
+            )
         );
     }
 
@@ -117,18 +143,17 @@ function shouldIgnoreEmail(
         "Subject"
     ).toLowerCase();
 
-    // Gmail Spam / Trash
     if (
         labelIds.includes("SPAM") ||
         labelIds.includes("TRASH")
     ) {
         return {
             ignore: true,
-            reason: "Gmail marked as spam or trash",
+            reason:
+                "Gmail marked as spam or trash",
         };
     }
 
-    // Common newsletter / marketing / notification senders
     const ignoredSenderPatterns = [
         "newsletter@",
         "news@",
@@ -144,16 +169,17 @@ function shouldIgnoreEmail(
 
     if (
         ignoredSenderPatterns.some(
-            (pattern) => from.includes(pattern)
+            (pattern) =>
+                from.includes(pattern)
         )
     ) {
         return {
             ignore: true,
-            reason: "Newsletter or automated sender",
+            reason:
+                "Newsletter or automated sender",
         };
     }
 
-    // Known social / promotional domains
     const ignoredDomains = [
         "tiktok.com",
         "facebookmail.com",
@@ -167,16 +193,17 @@ function shouldIgnoreEmail(
 
     if (
         ignoredDomains.some(
-            (domain) => from.includes(domain)
+            (domain) =>
+                from.includes(domain)
         )
     ) {
         return {
             ignore: true,
-            reason: "Social media or promotional email",
+            reason:
+                "Social media or promotional email",
         };
     }
 
-    // Obvious newsletter / promotional subjects
     const ignoredSubjectPatterns = [
         "newsletter",
         "unsubscribe",
@@ -196,12 +223,14 @@ function shouldIgnoreEmail(
 
     if (
         ignoredSubjectPatterns.some(
-            (pattern) => subject.includes(pattern)
+            (pattern) =>
+                subject.includes(pattern)
         )
     ) {
         return {
             ignore: true,
-            reason: "Newsletter, promotion, or notification",
+            reason:
+                "Newsletter, promotion, or notification",
         };
     }
 
@@ -211,31 +240,40 @@ function shouldIgnoreEmail(
     };
 }
 
-function getErrorStatus(error: any): number | null {
+function getErrorStatus(
+    error: any
+): number | null {
     return (
         error?.response?.status ??
         error?.status ??
-        error?.code ??
+        (typeof error?.code === "number"
+            ? error.code
+            : null) ??
         null
     );
 }
 
-function isNotFoundError(error: any): boolean {
+function isNotFoundError(
+    error: any
+): boolean {
     return getErrorStatus(error) === 404;
 }
 
 async function getGmail() {
-    const tokenRaw = await fs.readFile(
-        TOKEN_PATH,
-        "utf8"
-    );
+    const tokenRaw =
+        await fs.readFile(
+            TOKEN_PATH,
+            "utf8"
+        );
 
-    const credentials = JSON.parse(tokenRaw);
+    const credentials =
+        JSON.parse(tokenRaw);
 
-    const credentialsRaw = await fs.readFile(
-        CREDENTIALS_PATH,
-        "utf8"
-    );
+    const credentialsRaw =
+        await fs.readFile(
+            CREDENTIALS_PATH,
+            "utf8"
+        );
 
     const oauthCredentials =
         JSON.parse(credentialsRaw);
@@ -244,13 +282,22 @@ async function getGmail() {
         oauthCredentials.installed ??
         oauthCredentials.web;
 
-    const auth = new google.auth.OAuth2(
-        clientConfig.client_id,
-        clientConfig.client_secret,
-        "http://localhost"
-    );
+    if (!clientConfig) {
+        throw new Error(
+            "Invalid Gmail OAuth credentials"
+        );
+    }
 
-    auth.setCredentials(credentials);
+    const auth =
+        new google.auth.OAuth2(
+            clientConfig.client_id,
+            clientConfig.client_secret,
+            "http://localhost"
+        );
+
+    auth.setCredentials(
+        credentials
+    );
 
     return google.gmail({
         version: "v1",
@@ -258,67 +305,35 @@ async function getGmail() {
     });
 }
 
-async function loadState(): Promise<{
-    historyId: string | null;
-}> {
-    try {
-        const raw = await fs.readFile(
-            STATE_PATH,
-            "utf8"
-        );
-
-        const parsed = JSON.parse(raw);
-
-        return {
-            historyId:
-                typeof parsed.historyId === "string"
-                    ? parsed.historyId
-                    : null,
-        };
-    } catch {
-        return {
-            historyId: null,
-        };
-    }
-}
-
-async function saveState(
-    historyId: string
-) {
-    await fs.writeFile(
-        STATE_PATH,
-        JSON.stringify(
-            {
-                historyId,
-            },
-            null,
-            2
-        ),
-        "utf8"
-    );
-}
-
 async function createBaseline(
     historyId: string,
     reason: string
 ) {
-    await saveState(historyId);
+    await saveGmailState(
+        historyId
+    );
 
     console.log("");
     console.log(
         "----------------------------------------"
     );
-    console.log("GMAIL HISTORY BASELINE RESET");
+    console.log(
+        "GMAIL HISTORY BASELINE"
+    );
     console.log(
         "----------------------------------------"
     );
-    console.log(`Reason: ${reason}`);
-    console.log(`New history ID: ${historyId}`);
     console.log(
-        "Old history is not replayed."
+        `Reason: ${reason}`
     );
     console.log(
-        "Future Gmail notifications will be processed normally."
+        `Saved history ID: ${historyId}`
+    );
+    console.log(
+        "Old history will not be replayed."
+    );
+    console.log(
+        "Future Gmail changes will be processed."
     );
     console.log(
         "----------------------------------------"
@@ -329,72 +344,118 @@ async function createBaseline(
 export async function processGmailHistory(
     notificationHistoryId: string
 ) {
-    const gmail = await getGmail();
+    const gmail =
+        await getGmail();
 
-    const state = await loadState();
+    const state =
+        await getGmailState();
 
     console.log("");
     console.log(
         "========================================"
     );
-    console.log("PROCESSING GMAIL HISTORY");
+    console.log(
+        "PROCESSING GMAIL HISTORY"
+    );
     console.log(
         "========================================"
     );
+
     console.log(
-        `Previous history ID: ${state.historyId}`
-    );
-    console.log(
-        `Notification history ID: ${notificationHistoryId}`
+        `Previous history ID: ${state.historyId ?? "null"
+        }`
     );
 
-    // First notification:
-    // create baseline only.
+    console.log(
+        `Notification history ID: ${notificationHistoryId
+        }`
+    );
+
+    /*
+     * FIRST RUN
+     *
+     * We do not replay old Gmail messages.
+     * We only establish the current history
+     * position in PostgreSQL.
+     */
     if (!state.historyId) {
         await createBaseline(
             notificationHistoryId,
-            "No previous Gmail history ID"
+            "No Gmail history ID stored in PostgreSQL"
         );
 
         return;
     }
 
-    const messageIds = new Set<string>();
+    const messageIds =
+        new Set<string>();
 
-    let pageToken: string | undefined;
-    let latestHistoryId: string | null = null;
+    let pageToken:
+        | string
+        | undefined;
+
+    let latestHistoryId:
+        | string
+        | null = null;
+
     let totalHistoryRecords = 0;
 
+    /*
+     * Read Gmail history.
+     *
+     * Gmail returns history chronologically.
+     * If there are multiple pages, process all
+     * pages before advancing our stored state.
+     */
     do {
         let response;
 
         try {
             response =
-                await gmail.users.history.list({
-                    userId: "me",
-                    startHistoryId:
-                        state.historyId,
-                    historyTypes: [
-                        "messageAdded",
-                    ],
-                    pageToken,
-                });
+                await gmail.users.history.list(
+                    {
+                        userId: "me",
+                        startHistoryId:
+                            state.historyId,
+                        historyTypes: [
+                            "messageAdded",
+                        ],
+                        pageToken,
+                    }
+                );
         } catch (error) {
-            if (isNotFoundError(error)) {
+            if (
+                isNotFoundError(error)
+            ) {
                 console.warn("");
+                console.warn(
+                    "----------------------------------------"
+                );
                 console.warn(
                     "GMAIL HISTORY ID NOT FOUND"
                 );
                 console.warn(
-                    `History ID ${state.historyId} is no longer available.`
+                    "----------------------------------------"
                 );
                 console.warn(
-                    "Creating a new baseline."
+                    `Stored history ID: ${state.historyId}`
+                );
+                console.warn(
+                    `Notification history ID: ${notificationHistoryId}`
+                );
+                console.warn(
+                    "The Gmail history ID is expired or invalid."
+                );
+                console.warn(
+                    "Creating a new PostgreSQL baseline."
+                );
+                console.warn(
+                    "----------------------------------------"
                 );
 
                 await createBaseline(
                     notificationHistoryId,
-                    "Gmail history ID expired or became invalid"
+                    "Stored Gmail history ID expired or became invalid"
                 );
 
                 return;
@@ -404,20 +465,26 @@ export async function processGmailHistory(
         }
 
         const history =
-            response.data.history ?? [];
+            response.data.history ??
+            [];
 
         totalHistoryRecords +=
             history.length;
 
-        if (response.data.historyId) {
+        if (
+            response.data.historyId
+        ) {
             latestHistoryId =
                 response.data.historyId;
         }
 
-        for (const record of history) {
+        for (
+            const record of history
+        ) {
             for (
                 const item of
-                record.messagesAdded ?? []
+                record.messagesAdded ??
+                []
             ) {
                 const messageId =
                     item.message?.id;
@@ -453,22 +520,33 @@ export async function processGmailHistory(
         `✓ New messages: ${messageIds.size}`
     );
 
-    // Process each message independently.
-    //
-    // Important:
-    // A single 404 must NOT abort the whole history batch.
-    for (const messageId of messageIds) {
+    /*
+     * Process every new Gmail message.
+     */
+    for (
+        const messageId of messageIds
+    ) {
         let detail;
 
         try {
             detail =
-                await gmail.users.messages.get({
-                    userId: "me",
-                    id: messageId,
-                    format: "full",
-                });
+                await gmail.users.messages.get(
+                    {
+                        userId: "me",
+                        id: messageId,
+                        format: "full",
+                    }
+                );
         } catch (error) {
-            if (isNotFoundError(error)) {
+            /*
+             * A message can disappear between
+             * history.list and messages.get.
+             *
+             * This must NOT stop the entire batch.
+             */
+            if (
+                isNotFoundError(error)
+            ) {
                 console.warn("");
                 console.warn(
                     "----------------------------------------"
@@ -483,10 +561,7 @@ export async function processGmailHistory(
                     `Message ID: ${messageId}`
                 );
                 console.warn(
-                    "Message may have been deleted or is no longer available."
-                );
-                console.warn(
-                    "Skipping this message."
+                    "Skipping unavailable message."
                 );
                 console.warn(
                     "----------------------------------------"
@@ -495,9 +570,11 @@ export async function processGmailHistory(
                 continue;
             }
 
-            // 429 / quota / network / auth / server errors
-            // are still allowed to bubble up so Pub/Sub
-            // can retry the notification.
+            /*
+             * Other errors such as quota,
+             * network or server errors must
+             * bubble up so Pub/Sub can retry.
+             */
             throw error;
         }
 
@@ -505,10 +582,12 @@ export async function processGmailHistory(
             detail.data.payload;
 
         const headers =
-            payload?.headers ?? [];
+            payload?.headers ??
+            [];
 
         const labelIds =
-            detail.data.labelIds ?? [];
+            detail.data.labelIds ??
+            [];
 
         const filterResult =
             shouldIgnoreEmail(
@@ -516,7 +595,9 @@ export async function processGmailHistory(
                 labelIds
             );
 
-        if (filterResult.ignore) {
+        if (
+            filterResult.ignore
+        ) {
             console.log("");
             console.log(
                 "----------------------------------------"
@@ -527,21 +608,25 @@ export async function processGmailHistory(
             console.log(
                 "----------------------------------------"
             );
+
             console.log(
                 `From:    ${getHeader(
                     headers,
                     "From"
                 )}`
             );
+
             console.log(
                 `Subject: ${getHeader(
                     headers,
                     "Subject"
                 )}`
             );
+
             console.log(
                 `Reason:  ${filterResult.reason}`
             );
+
             console.log(
                 "----------------------------------------"
             );
@@ -556,90 +641,119 @@ export async function processGmailHistory(
         console.log(
             "----------------------------------------"
         );
-        console.log("NEW EMAIL");
+        console.log(
+            "NEW EMAIL"
+        );
         console.log(
             "----------------------------------------"
         );
+
         console.log(
             `Message ID: ${messageId}`
         );
+
         console.log(
             `From:       ${getHeader(
                 headers,
                 "From"
             )}`
         );
+
         console.log(
             `To:         ${getHeader(
                 headers,
                 "To"
             )}`
         );
+
         console.log(
             `Subject:    ${getHeader(
                 headers,
                 "Subject"
             )}`
         );
+
         console.log(
             `Date:       ${getHeader(
                 headers,
                 "Date"
             )}`
         );
+
         console.log("");
-        console.log("BODY");
         console.log(
-            "----------------------------------------"
+            "BODY"
         );
-        console.log(
-            body ||
-            "[No plain text body found]"
-        );
+
         console.log(
             "----------------------------------------"
         );
 
+        console.log(
+            body ||
+            "[No plain text body found]"
+        );
+
+        console.log(
+            "----------------------------------------"
+        );
+
+        /*
+         * Convert Gmail message into our
+         * unified communication format.
+         */
         const normalizedMessage =
-            normalizeGmailMessage({
-                messageId,
-                threadId:
-                    detail.data.threadId ??
+            normalizeGmailMessage(
+                {
                     messageId,
-                from: getHeader(
-                    headers,
-                    "From"
-                ),
-                to: getHeader(
-                    headers,
-                    "To"
-                ),
-                subject: getHeader(
-                    headers,
-                    "Subject"
-                ),
-                body,
-                timestamp:
-                    detail.data.internalDate
-                        ? new Date(
-                            Number(
-                                detail.data
-                                    .internalDate
-                            )
-                        ).toISOString()
-                        : getHeader(
+                    threadId:
+                        detail.data
+                            .threadId ??
+                        messageId,
+
+                    from: getHeader(
+                        headers,
+                        "From"
+                    ),
+
+                    to: getHeader(
+                        headers,
+                        "To"
+                    ),
+
+                    subject:
+                        getHeader(
                             headers,
-                            "Date"
+                            "Subject"
                         ),
-            });
+
+                    body,
+
+                    timestamp:
+                        detail.data
+                            .internalDate
+                            ? new Date(
+                                Number(
+                                    detail.data
+                                        .internalDate
+                                )
+                            ).toISOString()
+                            : getHeader(
+                                headers,
+                                "Date"
+                            ),
+                }
+            );
 
         console.log("");
         console.log(
             "NORMALIZED MESSAGE"
         );
+
         console.log(
             "----------------------------------------"
         );
+
         console.log(
             JSON.stringify(
                 normalizedMessage,
@@ -647,6 +761,7 @@ export async function processGmailHistory(
                 2
             )
         );
+
         console.log(
             "----------------------------------------"
         );
@@ -654,19 +769,26 @@ export async function processGmailHistory(
         recordActivity({
             channel: "email",
             type: "gmail_received",
+
             conversationId:
-                normalizedMessage.conversationId,
+                normalizedMessage
+                    .conversationId,
+
             customerName:
                 normalizedMessage.sender,
+
             status: "success",
+
             message:
                 normalizedMessage.subject
                     ? `Email: ${normalizedMessage.subject}`
                     : "Gmail message received",
         });
 
-        // IMPORTANT:
-        // Wait until the shared pipeline has finished.
+        /*
+         * Wait until the unified pipeline
+         * has completed.
+         */
         await ingestNormalizedMessage(
             normalizedMessage,
             {
@@ -681,46 +803,58 @@ export async function processGmailHistory(
         );
     }
 
-    // Only update state after all history pages
-    // and all available messages have been handled.
+    /*
+     * Advance Gmail state ONLY after
+     * the complete history batch has been
+     * processed.
+     */
     if (latestHistoryId) {
         try {
             const currentStateId =
-                BigInt(state.historyId);
+                BigInt(
+                    state.historyId
+                );
 
             const latestId =
-                BigInt(latestHistoryId);
+                BigInt(
+                    latestHistoryId
+                );
 
             if (
-                latestId >= currentStateId
+                latestId >=
+                currentStateId
             ) {
-                await saveState(
+                await saveGmailState(
                     latestHistoryId
                 );
 
                 console.log("");
                 console.log(
-                    `✓ State updated to: ${latestHistoryId}`
+                    `✓ PostgreSQL Gmail state updated: ${latestHistoryId}`
                 );
             } else {
                 console.log("");
                 console.log(
-                    `⚠ Ignoring older history ID: ${latestHistoryId}`
+                    `⚠ Gmail returned older history ID: ${latestHistoryId}`
                 );
+
                 console.log(
-                    `✓ State remains: ${state.historyId}`
+                    `✓ PostgreSQL state remains: ${state.historyId}`
                 );
             }
         } catch {
-            // If a malformed history ID somehow
-            // appears, don't crash the processor.
-            await saveState(
+            /*
+             * History IDs should be numeric strings.
+             * If Gmail ever returns something unexpected,
+             * save it rather than crashing the processor.
+             */
+            await saveGmailState(
                 latestHistoryId
             );
 
             console.log("");
             console.log(
-                `✓ State updated to: ${latestHistoryId}`
+                `✓ PostgreSQL Gmail state updated: ${latestHistoryId}`
             );
         }
     }
