@@ -5,6 +5,7 @@ import dashboardRouter from "./routes/dashboard";
 import cors from "cors";
 import { startGmailPubSubListener } from "./gmail/pubsub-listener";
 import { testDatabaseConnection } from "./database/index";
+import { startBaileysWhatsApp } from "./whatsapp/baileys-client";
 
 dotenv.config();
 
@@ -36,4 +37,10 @@ app.listen(PORT, "0.0.0.0", async () => {
     }
 
     startGmailPubSubListener();
+
+    if (process.env.WHATSAPP_SOURCE !== "official") {
+        startBaileysWhatsApp().catch((err) =>
+            console.error("Failed to start WhatsApp (Baileys):", err)
+        );
+    }
 });

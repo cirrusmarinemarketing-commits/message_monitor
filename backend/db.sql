@@ -91,6 +91,19 @@ CREATE TABLE activity_events (
     message TEXT
 );
 
+CREATE TABLE whatsapp_auth (
+    session_id TEXT PRIMARY KEY,
+    files JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE gmail_sync_state (
+    id INTEGER PRIMARY KEY,
+    history_id TEXT,
+    watch_expiration TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_messages_conversation
 ON messages(conversation_id, channel);
 
