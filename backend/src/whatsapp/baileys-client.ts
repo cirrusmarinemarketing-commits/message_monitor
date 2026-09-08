@@ -139,7 +139,6 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 
 		for (const msg of messages) {
 			if (!msg.message) continue;
-			if (msg.key.fromMe) continue;
 
 			const jid = msg.key.remoteJid;
 			if (!jid || jid === "status@broadcast") continue;
@@ -148,26 +147,32 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 			if (text === null) continue;
 
 			const waId = jid.split("@")[0] ?? jid;
-			const customerName = msg.pushName || null;
+			const isFromMe = !!msg.key.fromMe;
+			const customerName = isFromMe ? undefined : msg.pushName || null;
 
 			const normalized = normalizeWhatsAppMessage({
 				messageId: msg.key.id ?? `baileys-${Date.now()}`,
 				waId,
-				from: waId,
+				from: isFromMe ? "business" : waId,
 				text,
 				timestamp: String(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
 			});
 
 			recordActivity({
 				channel: "whatsapp",
-				type: "whatsapp_received",
+				type: isFromMe ? "whatsapp_sent" : "whatsapp_received",
 				conversationId: waId,
-				customerName,
+				customerName: customerName ?? null,
 				status: "success",
-				message: "WhatsApp message received (unofficial/Baileys)",
+				message: isFromMe
+					? "WhatsApp reply sent from linked phone (unofficial/Baileys)"
+					: "WhatsApp message received (unofficial/Baileys)",
 			});
 
-			ingestNormalizedMessage(normalized, { customerName });
+			ingestNormalizedMessage(normalized, {
+				customerName,
+				role: isFromMe ? "business" : "customer",
+			});
 		}
 	});
 

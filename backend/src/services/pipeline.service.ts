@@ -7,6 +7,7 @@ import { recordActivity } from "./activity.service";
 export type IngestOptions = {
     customerName?: string | null;
     waitForCompletion?: boolean;
+    role?: string;
 };
 
 /**
@@ -25,7 +26,7 @@ export function ingestNormalizedMessage(
         (normalized.channel === "email" ? normalized.sender : null);
 
     const message: ConversationMessage = {
-        role: "customer",
+        role: options.role ?? "customer",
         id: normalized.messageId,
         from: normalized.sender,
         to: normalized.recipient ?? null,
