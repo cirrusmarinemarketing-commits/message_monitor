@@ -69,9 +69,14 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 
 	sock.ev.on("creds.update", async () => {
 		await saveCreds();
-		await backupAuthFolder(AUTH_FOLDER).catch((err) =>
-			console.error("Failed to backup WhatsApp auth to DB:", err)
-		);
+		// Only push to the DB once actually paired/registered — backing up
+		// mid-pairing (half-formed) credentials is what caused the DB to
+		// hold a broken session that fights with the next pairing attempt.
+		if (sock.authState.creds.registered) {
+			await backupAuthFolder(AUTH_FOLDER).catch((err) =>
+				console.error("Failed to backup WhatsApp auth to DB:", err)
+			);
+		}
 	});
 
 	// Request a pairing code once, right after the socket is created — not
