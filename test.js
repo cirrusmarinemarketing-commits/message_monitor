@@ -1,6 +1,6 @@
 const fs = require("fs");
 
-const API_URL = "https://message-monitor.onrender.com/webhook/whatsapp/test";
+const API_URL = "http://43.209.214.211:3001/webhook/whatsapp/test";
 
 const testData = JSON.parse(
     fs.readFileSync("./test-cases.json", "utf8")

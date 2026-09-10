@@ -39,7 +39,6 @@ type AnalyzeInput = {
     customer: CustomerInfo;
     currentMessage: ConversationMessage;
     conversationHistory: ConversationMessage[];
-
     channel?: "whatsapp" | "email";
     subject?: string | null;
 };
@@ -47,87 +46,49 @@ type AnalyzeInput = {
 const SYSTEM_PROMPT = `
 You are Cirrus Marine's conversation analysis engine.
 
-Analyze the customer's latest active request using the conversation context.
+Analyze the FULL conversation cluster, including both CUSTOMER and CIRRUS messages.
+The latest message triggers the analysis, but must NOT be analyzed alone.
+Determine the current intent, conversation state, positions, and pending action from the whole conversation.
 
-RULES:
-- Focus on the latest active customer intent.
-- Use previous messages only as context.
-- Never invent facts, dates, prices, availability, actions, or confirmations.
-- Extract only information explicitly stated.
-- If information is unknown, return null.
-- Preserve the customer's wording and meaning when extracting facts.
-- Support both WhatsApp and Email.
-- For Email, use the subject as additional context.
+Rules:
+- Use only facts stated in the conversation.
+- Never invent facts, prices, dates, actions, or confirmations.
+- Unknown information = null.
+- Preserve the meaning of the conversation.
+- For email, use the subject as context.
 
 INTENT:
-- quotation_request: asks for quotation, estimate, or price for a service/product.
-- service_request: wants inspection, repair, installation, maintenance, or other physical service.
-- technical_support: mainly wants technical advice or troubleshooting.
-- parts_inquiry: asks about spare parts, stock, or part pricing.
-- payment_inquiry: payment, invoice, billing, or amount issue.
-- refund_request: explicitly asks for a refund.
-- follow_up: asks for an update on an existing request.
-- complaint: expresses dissatisfaction or complaint.
-- general_inquiry: clear general business question.
-- needs_clarification: request is too vague to process.
-- normal_chat: casual conversation.
+quotation_request, service_request, technical_support, parts_inquiry,
+payment_inquiry, refund_request, follow_up, complaint,
+general_inquiry, needs_clarification, normal_chat.
 
 SERVICE:
-- Asking whether Cirrus provides a service → service_request + RESPOND.
-- Reporting a real problem or requesting technician/service → service_request + CREATE_CASE.
-- Missing optional details such as location/model does not prevent CREATE_CASE.
-- A vague request without a meaningful problem → needs_clarification.
+- Asking if Cirrus provides a service → service_request + RESPOND.
+- Reporting a real problem or requesting service/repair → service_request + CREATE_CASE.
+- Vague request without a meaningful problem → needs_clarification + ASK_CLARIFICATION.
 
 HANDOFF:
-If the customer asks to speak with a person/staff/member of the team:
+If the customer explicitly asks for a human/staff member:
 → action = HANDOFF_TO_HUMAN
 Keep the underlying intent.
 
 FOLLOW-UP:
 If asking for an update on an existing request:
 → intent = follow_up
-→ action = RESPOND
-→ status = waiting_for_cirrus
+→ action = RESPOND.
 
 ACTION:
-- CREATE_CASE = meaningful service/repair request.
-- HANDOFF_TO_HUMAN = explicitly requests a human.
-- ASK_CLARIFICATION = request is too vague.
-- RESPOND = normal inquiry/request that can be answered.
-- NO_ACTION = casual conversation.
+CREATE_CASE, HANDOFF_TO_HUMAN, ASK_CLARIFICATION, RESPOND, NO_ACTION.
 
 STATUS:
-Use the most appropriate status based only on the conversation.
+Return the current conversation status based on the whole conversation.
 
 AMOUNT:
-- amount is NOT "any monetary value mentioned in the message".
-- amount is only the single monetary amount that is directly relevant to the customer's latest request or question.
-- If the customer is only providing, reporting, listing, or clarifying invoice/billing amounts, set amount = null.
-- If multiple monetary amounts are mentioned and there is no single amount being requested or discussed as the main amount, set amount = null.
-- Never combine multiple amounts into one string.
-- Never return comma-separated monetary values.
-- If the customer asks "How much is the repair?" and one amount is clearly being asked about, extract that amount.
-- If the customer asks about a total amount and the total is explicitly stated, extract the total.
-- If the message contains prices only as background information, set amount = null.
+Return only the single monetary amount directly relevant to the customer's current request.
+If amounts are only background information, return null.
+If multiple amounts are mentioned without one clearly being the requested amount, return null.
 
-EXAMPLE:
-Customer: "There are two outstanding invoices: THB 10,827.70 and THB 8,540.90."
-amount: null
-
-EXAMPLE:
-Customer: "How much is the repair for Fan Coil Unit No. 14?"
-amount: "10827.70"
-
-EXAMPLE:
-Customer: "The total outstanding amount is THB 19,368.60."
-amount: "19368.60"
-
-EXAMPLE:
-Customer: "Invoice 14 is THB 10,827.70 and Invoice 29 is THB 8,540.90. I just want to clarify which unit was brought back."
-amount: null
-
-OUTPUT:
-Return exactly one JSON object with these fields:
+Return exactly:
 {
   "intent": string | null,
   "action": string | null,
@@ -143,7 +104,7 @@ Return exactly one JSON object with these fields:
   "conversation_status": string | null
 }
 
-No markdown. No explanation. JSON only.
+JSON only. No markdown. No explanation.
 `;
 
 function getGroqClient(): Groq {
@@ -157,15 +118,30 @@ function getGroqClient(): Groq {
 }
 
 function buildUserPrompt(input: AnalyzeInput): string {
-    const history = input.conversationHistory
-        .slice(-10)
-        .map((message) => {
+    const history = [...input.conversationHistory];
+
+    const currentExists = input.currentMessage.id
+        ? history.some(
+            (message) =>
+                message.id === input.currentMessage.id
+        )
+        : history.length > 0 &&
+        history[history.length - 1]?.text ===
+        input.currentMessage.text;
+
+    if (!currentExists) {
+        history.push(input.currentMessage);
+    }
+
+    const conversation = history
+        .map((message, index) => {
             const role =
                 message.role === "customer"
                     ? "CUSTOMER"
                     : "CIRRUS";
 
-            return `${role}: ${message.text ?? ""}`;
+            return `${index + 1}. ${role}: ${message.text ?? ""
+                }`;
         })
         .join("\n");
 
@@ -174,12 +150,10 @@ Channel: ${input.channel ?? "whatsapp"}
 Customer: ${input.customer.profile?.name ?? "Unknown"}
 Subject: ${input.subject ?? "(none)"}
 
-Conversation:
-${history || "(none)"}
+CONVERSATION CLUSTER:
+${conversation || "(none)"}
 
-Latest customer message:
-${input.currentMessage.text ?? ""}
-
+Analyze the entire conversation cluster.
 Return JSON only.
 `;
 }
@@ -239,9 +213,7 @@ function isRateLimitError(error: any): boolean {
     );
 }
 
-function cleanJsonContent(
-    content: string
-): string {
+function cleanJsonContent(content: string): string {
     return content
         .replace(/^```json\s*/i, "")
         .replace(/^```\s*/i, "")
@@ -253,9 +225,7 @@ export async function analyzeMessage(
     input: AnalyzeInput
 ): Promise<AIAnalysis> {
     const groq = getGroqClient();
-
-    const userPrompt =
-        buildUserPrompt(input);
+    const userPrompt = buildUserPrompt(input);
 
     for (
         let attempt = 1;
@@ -264,19 +234,16 @@ export async function analyzeMessage(
     ) {
         try {
             console.log(
-                "Sending conversation to Groq..."
+                "Sending conversation cluster to Groq..."
             );
 
             const completion =
                 await groq.chat.completions.create({
                     model: MODEL,
-
                     temperature: 0,
-
                     response_format: {
                         type: "json_object",
                     },
-
                     messages: [
                         {
                             role: "system",
@@ -299,54 +266,30 @@ export async function analyzeMessage(
                 );
             }
 
-            const content =
-                cleanJsonContent(rawContent);
-
-            const analysis =
-                JSON.parse(content) as AIAnalysis;
+            const analysis = JSON.parse(
+                cleanJsonContent(rawContent)
+            ) as AIAnalysis;
 
             return {
-                intent:
-                    analysis.intent ?? null,
-
-                action:
-                    analysis.action ?? null,
-
-                equipment:
-                    analysis.equipment ?? null,
-
-                problem:
-                    analysis.problem ?? null,
-
-                location:
-                    analysis.location ?? null,
-
-                request:
-                    analysis.request ?? null,
-
+                intent: analysis.intent ?? null,
+                action: analysis.action ?? null,
+                equipment: analysis.equipment ?? null,
+                problem: analysis.problem ?? null,
+                location: analysis.location ?? null,
+                request: analysis.request ?? null,
                 amount:
                     typeof analysis.amount === "number"
                         ? analysis.amount
                         : null,
-
-                summary:
-                    analysis.summary ?? null,
-
+                summary: analysis.summary ?? null,
                 customer_position:
-                    analysis.customer_position ??
-                    null,
-
+                    analysis.customer_position ?? null,
                 cirrus_position:
-                    analysis.cirrus_position ??
-                    null,
-
+                    analysis.cirrus_position ?? null,
                 pending_action:
-                    analysis.pending_action ??
-                    null,
-
+                    analysis.pending_action ?? null,
                 conversation_status:
-                    analysis.conversation_status ??
-                    null,
+                    analysis.conversation_status ?? null,
             };
         } catch (error: any) {
             const errorCode =
@@ -364,24 +307,17 @@ export async function analyzeMessage(
                 if (
                     attempt >= MAX_RETRIES
                 ) {
-                    console.error(
-                        "Groq JSON validation: maximum retries reached"
-                    );
-
                     throw error;
                 }
 
-                await new Promise(
-                    (resolve) =>
-                        setTimeout(resolve, 1000)
+                await new Promise((resolve) =>
+                    setTimeout(resolve, 1000)
                 );
 
                 continue;
             }
 
-            if (
-                !isRateLimitError(error)
-            ) {
+            if (!isRateLimitError(error)) {
                 console.error(
                     "Groq analysis error:",
                     error
@@ -390,9 +326,7 @@ export async function analyzeMessage(
                 throw error;
             }
 
-            if (
-                attempt >= MAX_RETRIES
-            ) {
+            if (attempt >= MAX_RETRIES) {
                 console.error(
                     "Groq rate limit: maximum retries reached"
                 );
@@ -400,8 +334,7 @@ export async function analyzeMessage(
                 throw error;
             }
 
-            const delay =
-                getRetryDelay(error);
+            const delay = getRetryDelay(error);
 
             console.warn(
                 `Groq rate limit reached. Retry ${attempt}/${MAX_RETRIES - 1} after ${Math.round(
@@ -409,14 +342,11 @@ export async function analyzeMessage(
                 )}s`
             );
 
-            await new Promise(
-                (resolve) =>
-                    setTimeout(resolve, delay)
+            await new Promise((resolve) =>
+                setTimeout(resolve, delay)
             );
         }
     }
 
-    throw new Error(
-        "AI analysis failed"
-    );
+    throw new Error("AI analysis failed");
 }

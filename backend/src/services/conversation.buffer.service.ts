@@ -31,7 +31,7 @@ type BufferState = {
 };
 
 const buffers = new Map<string, BufferState>();
-const DEBOUNCE_MS = 2000;
+const DEBOUNCE_MS = 10000;
 
 function getBuffer(identity: ConversationIdentity): BufferState {
     let buffer = buffers.get(identity.conversationId);
