@@ -1,51 +1,94 @@
 import type { NormalizedMessage } from "../types/communication";
-import { addConversationMessage, ConversationMessage } from "./conversation.service";
+
+import {
+    addConversationMessage,
+    ConversationMessage,
+} from "./conversation.service";
+
 import { receiveMessage } from "./conversation.buffer.service";
+
 import type { AIAnalysis } from "./ai.service";
+
 import { recordActivity } from "./activity.service";
 
 export type IngestOptions = {
     customerName?: string | null;
     waitForCompletion?: boolean;
-    role?: string;
+    role?: "customer" | "cirrus";
 };
 
-/**
- * The single shared entry point for both channels once a message has been
- * normalized by its adapter:
- * store conversation -> buffer/group -> AI analysis -> business logic ->
- * action executor -> case/handoff/response (the last four steps run inside
- * conversation.buffer.service once the debounce window elapses).
- */
-export function ingestNormalizedMessage(
+export async function ingestNormalizedMessage(
     normalized: NormalizedMessage,
     options: IngestOptions = {}
-): Promise<AIAnalysis | null> | null {
+): Promise<AIAnalysis | null> {
     const customerName =
         options.customerName ??
-        (normalized.channel === "email" ? normalized.sender : null);
+        (normalized.channel === "email"
+            ? normalized.sender
+            : null);
+
+    /*
+     * Role MUST already be determined by the
+     * channel adapter before this point.
+     *
+     * WhatsApp:
+     *   staff    → cirrus
+     *   customer → customer
+     *
+     * Email:
+     *   currently defaults to customer unless
+     *   the caller explicitly provides another role.
+     */
+    const role =
+        options.role ?? "customer";
 
     const message: ConversationMessage = {
-        role: options.role ?? "customer",
+        role,
+
         id: normalized.messageId,
+
         from: normalized.sender,
+
         to: normalized.recipient ?? null,
+
         timestamp: normalized.timestamp,
-        type: normalized.channel === "email" ? "email" : "text",
+
+        type:
+            normalized.channel === "email"
+                ? "email"
+                : "text",
+
         text: normalized.text,
+
         channel: normalized.channel,
-        subject: normalized.subject ?? null,
-        conversationId: normalized.conversationId,
-        senderName: normalized.senderName ?? null,
+
+        subject:
+            normalized.subject ?? null,
+
+        conversationId:
+            normalized.conversationId,
+
+        senderName:
+            normalized.senderName ?? null,
     };
 
-    const added = addConversationMessage(
-        normalized.conversationId,
-        normalized.channel,
-        message,
-        customerName,
-        normalized.groupId ?? null
-    );
+    /*
+     * IMPORTANT:
+     *
+     * Wait for PostgreSQL INSERT before
+     * continuing into the conversation pipeline.
+     *
+     * This makes duplicate detection reliable
+     * and guarantees the role is persisted.
+     */
+    const added =
+        await addConversationMessage(
+            normalized.conversationId,
+            normalized.channel,
+            message,
+            customerName,
+            normalized.groupId ?? null
+        );
 
     if (!added) {
         console.log(
@@ -57,17 +100,31 @@ export function ingestNormalizedMessage(
 
     recordActivity({
         channel: normalized.channel,
+
         type: "conversation_updated",
-        conversationId: normalized.conversationId,
+
+        conversationId:
+            normalized.conversationId,
+
         customerName,
+
         status: "success",
-        message: `Message stored for ${normalized.conversationId}`,
+
+        message:
+            `Message stored for ${normalized.conversationId} as ${role}`,
     });
 
+    /*
+     * Only process the conversation after
+     * the message has successfully been stored.
+     */
     return receiveMessage(
         {
-            conversationId: normalized.conversationId,
+            conversationId:
+                normalized.conversationId,
+
             channel: normalized.channel,
+
             customerName,
         },
         message,

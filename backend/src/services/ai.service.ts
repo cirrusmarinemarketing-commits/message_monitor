@@ -11,7 +11,7 @@ export type AIAnalysis = {
     problem: string | null;
     location: string | null;
     request: string | null;
-    amount: string | null;
+    amount: number | null;
     summary: string | null;
     customer_position: string | null;
     cirrus_position: string | null;
@@ -99,6 +99,33 @@ ACTION:
 STATUS:
 Use the most appropriate status based only on the conversation.
 
+AMOUNT:
+- amount is NOT "any monetary value mentioned in the message".
+- amount is only the single monetary amount that is directly relevant to the customer's latest request or question.
+- If the customer is only providing, reporting, listing, or clarifying invoice/billing amounts, set amount = null.
+- If multiple monetary amounts are mentioned and there is no single amount being requested or discussed as the main amount, set amount = null.
+- Never combine multiple amounts into one string.
+- Never return comma-separated monetary values.
+- If the customer asks "How much is the repair?" and one amount is clearly being asked about, extract that amount.
+- If the customer asks about a total amount and the total is explicitly stated, extract the total.
+- If the message contains prices only as background information, set amount = null.
+
+EXAMPLE:
+Customer: "There are two outstanding invoices: THB 10,827.70 and THB 8,540.90."
+amount: null
+
+EXAMPLE:
+Customer: "How much is the repair for Fan Coil Unit No. 14?"
+amount: "10827.70"
+
+EXAMPLE:
+Customer: "The total outstanding amount is THB 19,368.60."
+amount: "19368.60"
+
+EXAMPLE:
+Customer: "Invoice 14 is THB 10,827.70 and Invoice 29 is THB 8,540.90. I just want to clarify which unit was brought back."
+amount: null
+
 OUTPUT:
 Return exactly one JSON object with these fields:
 {
@@ -108,7 +135,7 @@ Return exactly one JSON object with these fields:
   "problem": string | null,
   "location": string | null,
   "request": string | null,
-  "amount": string | null,
+  "amount": number | null,
   "summary": string | null,
   "customer_position": string | null,
   "cirrus_position": string | null,
@@ -298,7 +325,9 @@ export async function analyzeMessage(
                     analysis.request ?? null,
 
                 amount:
-                    analysis.amount ?? null,
+                    typeof analysis.amount === "number"
+                        ? analysis.amount
+                        : null,
 
                 summary:
                     analysis.summary ?? null,

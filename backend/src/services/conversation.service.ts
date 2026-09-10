@@ -46,8 +46,8 @@ export async function addConversationMessage(
         ON CONFLICT (conversation_id, channel)
         DO UPDATE SET
             customer_name = COALESCE(
-                conversations.customer_name,
-                EXCLUDED.customer_name
+                EXCLUDED.customer_name,
+                conversations.customer_name
             ),
             group_id = COALESCE(
                 conversations.group_id,

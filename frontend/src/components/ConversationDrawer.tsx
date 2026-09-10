@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ConversationDetail, HumanHandoff, ServiceCase } from '../types'
 import { getDashboardConversation } from '../services/dashboard.service'
 import { getIntentMeta, getActionLabel } from '../lib/intent'
@@ -41,6 +41,7 @@ function ConversationDrawer({
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     // No synchronous setState here: this component is fully remounted on
@@ -69,6 +70,17 @@ function ConversationDrawer({
     }
   }, [conversationId, channel])
 
+  useEffect(() => {
+    if (!detail?.messages?.length) return
+
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: 'auto',
+        block: 'end',
+      })
+    })
+  }, [detail?.conversationId, detail?.messages?.length])
+
   const analysis = detail?.analysis ?? null
   const intentMeta = getIntentMeta(analysis?.intent ?? detail?.intent)
   const lastMessage = detail?.messages[detail.messages.length - 1]
@@ -78,7 +90,10 @@ function ConversationDrawer({
       <div className="drawer-header">
         <div>
           <span className="drawer-eyebrow">Conversation</span>
-          <h2>{customerName ?? conversationId}</h2>
+          <h2>
+            {customerName ?? conversationId}
+            {detail?.groupId && <span className="group-badge">Group</span>}
+          </h2>
           <div className="drawer-header-tags">
             <ChannelBadge channel={channel as 'whatsapp' | 'email'} />
             <StatusBadge status={detail?.conversationStatus} />
@@ -126,6 +141,8 @@ function ConversationDrawer({
                     <span className="bubble-time">{formatDateTime(message.timestamp)}</span>
                   </div>
                 ))}
+
+                <div ref={messagesEndRef} />
               </div>
             )}
           </div>

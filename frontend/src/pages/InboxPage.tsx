@@ -225,7 +225,10 @@ function InboxPage({ conversations, cases, handoffs, initialFilter, onSelect }: 
                   {isNew && <span className="inbox-dot-new" title="New" />}
                   <ChannelBadge channel={conversation.channel} compact />
                   <div className="inbox-row-name">
-                    <strong>{conversation.customerName ?? conversation.conversationId}</strong>
+                    <strong>
+                      {conversation.customerName ?? conversation.conversationId}
+                      {conversation.groupId && <span className="group-badge">Group</span>}
+                    </strong>
                     <span>{conversation.lastMessage?.subject ?? conversation.conversationId}</span>
                   </div>
                 </div>

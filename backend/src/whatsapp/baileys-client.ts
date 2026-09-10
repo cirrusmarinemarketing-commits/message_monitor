@@ -18,48 +18,171 @@ import {
 	setComponentOffline,
 } from "../services/system-status.service";
 import { restoreAuthFolder, backupAuthFolder } from "./auth-store";
-import { isStaffNumber, getStaffName } from "../services/staff-contacts.service";
-
-/**
- * Unofficial WhatsApp connection using Baileys (speaks the same protocol
- * as web.whatsapp.com — no Meta Business API / verification required).
- *
- * Feeds the exact same `ingestNormalizedMessage` pipeline that
- * `routes/whatsapp.ts` (the official Meta webhook handler) already uses,
- * so conversation storage, AI analysis, cases, and handoffs all work
- * identically regardless of which connection method is active.
- *
- * Read-only: this never sends messages. Uses phone-number pairing (a
- * one-time 8-digit code typed into WhatsApp on the linked phone) instead
- * of scanning a QR code, since this runs on a headless server (Render).
- */
+import {
+	isStaffNumber,
+	getStaffName,
+	isStaffName,
+	getStaffNameByName,
+} from "../services/staff-contacts.service";
 
 const AUTH_FOLDER = path.join(__dirname, "..", "..", "auth_info");
+
 let isReconnecting = false;
+
+const groupNameCache = new Map<string, string>();
+
+async function getGroupSubject(
+	sock: WASocket,
+	jid: string
+): Promise<string | null> {
+	if (groupNameCache.has(jid)) {
+		return groupNameCache.get(jid) ?? null;
+	}
+
+	try {
+		const metadata = await sock.groupMetadata(jid);
+		const subject = metadata.subject || null;
+
+		if (subject) {
+			groupNameCache.set(jid, subject);
+		}
+
+		return subject;
+	} catch (err) {
+		console.error(
+			"Failed to fetch group metadata for",
+			jid,
+			err
+		);
+
+		return null;
+	}
+}
 
 function extractText(msg: any): string | null {
 	const m = msg.message;
+
 	if (!m) return null;
-	if (m.conversation) return m.conversation;
-	if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
-	if (m.imageMessage?.caption) return `[image] ${m.imageMessage.caption}`;
-	if (m.videoMessage?.caption) return `[video] ${m.videoMessage.caption}`;
-	if (m.documentMessage) return `[document] ${m.documentMessage.fileName || ""}`;
-	if (m.audioMessage) return "[audio message]";
-	if (m.stickerMessage) return "[sticker]";
+
+	if (m.conversation) {
+		return m.conversation;
+	}
+
+	if (m.extendedTextMessage?.text) {
+		return m.extendedTextMessage.text;
+	}
+
+	if (m.imageMessage?.caption) {
+		return `[image] ${m.imageMessage.caption}`;
+	}
+
+	if (m.videoMessage?.caption) {
+		return `[video] ${m.videoMessage.caption}`;
+	}
+
+	if (m.documentMessage) {
+		return `[document] ${m.documentMessage.fileName || ""}`;
+	}
+
+	if (m.audioMessage) {
+		return "[audio message]";
+	}
+
+	if (m.stickerMessage) {
+		return "[sticker]";
+	}
+
+	return null;
+}
+
+function extractPhoneNumber(
+	jid: string | null | undefined
+): string | null {
+	if (!jid) return null;
+
+	const number = jid.split("@")[0];
+
+	if (!number) return null;
+
+	return number.replace(/\D/g, "") || null;
+}
+
+async function resolveSenderPhone(
+	sock: WASocket,
+	groupJid: string,
+	senderJid: string,
+	isGroup: boolean,
+	participantAlt?: string | null
+): Promise<string | null> {
+	if (senderJid.endsWith("@s.whatsapp.net")) {
+		return extractPhoneNumber(senderJid);
+	}
+
+	if (
+		participantAlt &&
+		participantAlt.endsWith("@s.whatsapp.net")
+	) {
+		const phone =
+			extractPhoneNumber(participantAlt);
+
+		if (phone) {
+			return phone;
+		}
+	}
+
+	if (isGroup && senderJid.endsWith("@lid")) {
+		try {
+			const metadata =
+				await sock.groupMetadata(groupJid);
+
+			const participant =
+				metadata.participants.find(
+					(item) =>
+						item.id === senderJid ||
+						item.lid === senderJid
+				);
+
+			if (participant?.phoneNumber) {
+				return extractPhoneNumber(
+					participant.phoneNumber
+				);
+			}
+		} catch (err) {
+			console.error(
+				"Failed to resolve WhatsApp LID:",
+				{
+					groupJid,
+					senderJid,
+					error: err,
+				}
+			);
+		}
+	}
+
 	return null;
 }
 
 export async function startBaileysWhatsApp(): Promise<WASocket> {
 	await restoreAuthFolder(AUTH_FOLDER);
-	const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
 
-	let version: [number, number, number] = [2, 3000, 1015901307];
+	const { state, saveCreds } =
+		await useMultiFileAuthState(AUTH_FOLDER);
+
+	let version: [number, number, number] = [
+		2,
+		3000,
+		1015901307,
+	];
+
 	try {
-		const fetched = await fetchLatestBaileysVersion();
+		const fetched =
+			await fetchLatestBaileysVersion();
+
 		version = fetched.version;
 	} catch {
-		console.log("Could not fetch latest Baileys version, using fallback.");
+		console.log(
+			"Could not fetch latest Baileys version, using fallback."
+		);
 	}
 
 	const sock = makeWASocket({
@@ -71,21 +194,22 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 
 	sock.ev.on("creds.update", async () => {
 		await saveCreds();
-		// Only push to the DB once actually paired/registered — backing up
-		// mid-pairing (half-formed) credentials is what caused the DB to
-		// hold a broken session that fights with the next pairing attempt.
+
 		if (sock.authState.creds.registered) {
-			await backupAuthFolder(AUTH_FOLDER).catch((err) =>
-				console.error("Failed to backup WhatsApp auth to DB:", err)
+			await backupAuthFolder(AUTH_FOLDER).catch(
+				(err) =>
+					console.error(
+						"Failed to backup WhatsApp auth to DB:",
+						err
+					)
 			);
 		}
 	});
 
-	// Request a pairing code once, right after the socket is created — not
-	// inside connection.update, and not immediately. Asking too early or
-	// more than once causes Baileys to throw "Connection Closed" (428).
 	if (!sock.authState.creds.registered) {
-		const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER;
+		const phoneNumber =
+			process.env.WHATSAPP_PHONE_NUMBER;
+
 		if (!phoneNumber) {
 			console.error(
 				"WHATSAPP_PHONE_NUMBER env var is not set. Set it (e.g. 66812345678, no + or spaces) to get a pairing code."
@@ -93,113 +217,323 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 		} else {
 			setTimeout(async () => {
 				try {
-					const code = await sock.requestPairingCode(phoneNumber);
-					console.log("\n========== WHATSAPP PAIRING CODE ==========");
+					const code =
+						await sock.requestPairingCode(
+							phoneNumber
+						);
+
+					console.log(
+						"\n========== WHATSAPP PAIRING CODE =========="
+					);
 					console.log(`Code: ${code}`);
-					console.log("On your phone: WhatsApp → Settings → Linked Devices");
-					console.log("→ Link a Device → Link with phone number instead");
-					console.log("=============================================\n");
+					console.log(
+						"On your phone: WhatsApp → Settings → Linked Devices"
+					);
+					console.log(
+						"→ Link a Device → Link with phone number instead"
+					);
+					console.log(
+						"=============================================\n"
+					);
 				} catch (err) {
-					console.error("Failed to request pairing code:", err);
+					console.error(
+						"Failed to request pairing code:",
+						err
+					);
 				}
 			}, 3000);
 		}
 	}
 
 	sock.ev.on("connection.update", (update) => {
-		const { connection, lastDisconnect } = update;
+		const {
+			connection,
+			lastDisconnect,
+		} = update;
 
 		if (connection === "open") {
-			console.log("✓ WhatsApp (Baileys) connected");
+			console.log(
+				"✓ WhatsApp (Baileys) connected"
+			);
+
 			setComponentHealthy("whatsapp");
-			backupAuthFolder(AUTH_FOLDER).catch((err) =>
-				console.error("Failed to backup WhatsApp auth to DB:", err)
+
+			backupAuthFolder(AUTH_FOLDER).catch(
+				(err) =>
+					console.error(
+						"Failed to backup WhatsApp auth to DB:",
+						err
+					)
 			);
 		}
 
 		if (connection === "close") {
-			const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-			const loggedOut = statusCode === DisconnectReason.loggedOut;
+			const statusCode =
+				(lastDisconnect?.error as any)
+					?.output?.statusCode;
+
+			const loggedOut =
+				statusCode === DisconnectReason.loggedOut;
 
 			if (loggedOut) {
 				console.log(
 					"WhatsApp session logged out. Clear the whatsapp_auth row in Postgres and restart to re-link."
 				);
-				setComponentOffline("whatsapp", "logged_out");
+
+				setComponentOffline(
+					"whatsapp",
+					"logged_out"
+				);
 			} else if (!isReconnecting) {
 				isReconnecting = true;
-				console.log("WhatsApp connection closed, reconnecting in 3s…");
-				setComponentError("whatsapp", lastDisconnect?.error ?? "connection closed");
+
+				console.log(
+					"WhatsApp connection closed, reconnecting in 3s…"
+				);
+
+				setComponentError(
+					"whatsapp",
+					lastDisconnect?.error ??
+					"connection closed"
+				);
+
 				setTimeout(() => {
 					startBaileysWhatsApp()
-						.catch((err) => console.error("Failed to reconnect WhatsApp:", err))
+						.catch((err) =>
+							console.error(
+								"Failed to reconnect WhatsApp:",
+								err
+							)
+						)
 						.finally(() => {
 							isReconnecting = false;
 						});
 				}, 3000);
 			} else {
-				console.log("Reconnect already in progress, ignoring extra close event.");
+				console.log(
+					"Reconnect already in progress, ignoring extra close event."
+				);
 			}
 		}
 	});
 
-	sock.ev.on("messages.upsert", async ({ messages, type }) => {
-		if (type !== "notify") return;
+	sock.ev.on(
+		"messages.upsert",
+		async ({ messages, type }) => {
+			if (type !== "notify") return;
 
-		for (const msg of messages) {
-			if (!msg.message) continue;
+			for (const msg of messages) {
+				try {
+					if (!msg.message) continue;
 
-			const jid = msg.key.remoteJid;
-			if (!jid || jid === "status@broadcast") continue;
+					const jid = msg.key.remoteJid;
 
-			const text = extractText(msg);
-			if (text === null) continue;
+					if (
+						!jid ||
+						jid === "status@broadcast"
+					) {
+						continue;
+					}
 
-			const isGroup = jid.endsWith("@g.us");
-			const waId = jid.split("@")[0] ?? jid;
+					const text = extractText(msg);
 
-			// ในกลุ่ม ผู้ส่งจริงอยู่ที่ msg.key.participant ไม่ใช่ remoteJid (ซึ่งเป็น jid ของกลุ่ม)
-			const senderJid = isGroup ? (msg.key.participant ?? jid) : jid;
-			const senderNumber = senderJid.split("@")[0] ?? senderJid;
+					if (text === null) continue;
 
-			const isFromMe = !!msg.key.fromMe;
-			const isStaff = isFromMe || (await isStaffNumber(senderNumber));
+					const isGroup =
+						jid.endsWith("@g.us");
 
-			const displayName = isFromMe
-				? "You"
-				: msg.pushName || (await getStaffName(senderNumber)) || senderNumber;
+					const waId =
+						jid.split("@")[0] ?? jid;
 
-			const customerName = isStaff ? undefined : displayName;
+					const senderJid = isGroup
+						? (msg.key.participant ?? jid)
+						: jid;
 
-			const normalized = normalizeWhatsAppMessage({
-				messageId: msg.key.id ?? `baileys-${Date.now()}`,
-				waId,
-				from: isStaff ? "cirrus" : senderNumber,
-				text,
-				timestamp: String(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
-				groupId: isGroup ? jid : null,
-				senderName: displayName,
-			});
+					const senderNumber =
+						extractPhoneNumber(
+							senderJid
+						);
 
-			recordActivity({
-				channel: "whatsapp",
-				type: isStaff ? "whatsapp_sent" : "whatsapp_received",
-				conversationId: waId,
-				customerName: customerName ?? null,
-				status: "success",
-				message: isStaff
-					? "WhatsApp reply sent (unofficial/Baileys)"
-					: "WhatsApp message received (unofficial/Baileys)",
-			});
+					const isFromMe =
+						!!msg.key.fromMe;
 
-			ingestNormalizedMessage(normalized, {
-				customerName,
-				role: isStaff ? "cirrus" : "customer",
-			})?.catch((err) => {
-				console.error("Failed to process WhatsApp message (ignored, service stays up):", err);
-			});
+					const pushName =
+						msg.pushName?.trim() || null;
+
+					let resolvedPhone =
+						await resolveSenderPhone(
+							sock,
+							jid,
+							senderJid,
+							isGroup,
+							msg.key.participantAlt
+						);
+
+					if (!resolvedPhone) {
+						resolvedPhone =
+							senderNumber;
+					}
+
+					const isStaffByPhone =
+						!isFromMe &&
+						!!resolvedPhone &&
+						(await isStaffNumber(
+							resolvedPhone
+						));
+
+					const isStaffByName =
+						!isFromMe &&
+						!!pushName &&
+						(await isStaffName(
+							pushName
+						));
+
+					const isOtherStaff =
+						isStaffByPhone ||
+						isStaffByName;
+
+					const isStaff =
+						isFromMe || isOtherStaff;
+
+					const role:
+						| "customer"
+						| "cirrus" = isStaff
+							? "cirrus"
+							: "customer";
+
+					let staffName: string | null =
+						null;
+
+					if (
+						isStaffByPhone &&
+						resolvedPhone
+					) {
+						staffName =
+							await getStaffName(
+								resolvedPhone
+							);
+					} else if (
+						isStaffByName &&
+						pushName
+					) {
+						staffName =
+							await getStaffNameByName(
+								pushName
+							);
+					}
+
+					const senderDisplayName =
+						isFromMe
+							? "You"
+							: isStaff
+								? staffName ||
+								pushName ||
+								senderNumber ||
+								senderJid
+								: pushName ||
+								senderNumber ||
+								senderJid;
+
+					console.log(
+						"[WHATSAPP ROLE CHECK]",
+						{
+							jid,
+							senderJid,
+							participantAlt:
+								msg.key
+									.participantAlt ??
+								null,
+							pushName,
+							senderNumber,
+							resolvedPhone,
+							isFromMe,
+							isStaffByPhone,
+							isStaffByName,
+							isOtherStaff,
+							isStaff,
+							role,
+							senderDisplayName,
+						}
+					);
+
+					const conversationTitle =
+						isGroup
+							? await getGroupSubject(
+								sock,
+								jid
+							)
+							: isStaff
+								? undefined
+								: senderDisplayName;
+
+					const normalized =
+						normalizeWhatsAppMessage({
+							messageId:
+								msg.key.id ??
+								`baileys-${Date.now()}`,
+
+							waId,
+
+							from: isStaff
+								? "cirrus"
+								: resolvedPhone ??
+								senderNumber ??
+								senderJid,
+
+							text,
+
+							timestamp: String(
+								msg.messageTimestamp ??
+								Math.floor(
+									Date.now() / 1000
+								)
+							),
+
+							groupId: isGroup
+								? jid
+								: null,
+
+							senderName:
+								senderDisplayName,
+						});
+
+					recordActivity({
+						channel: "whatsapp",
+
+						type: isStaff
+							? "whatsapp_sent"
+							: "whatsapp_received",
+
+						conversationId:
+							normalized.conversationId,
+
+						customerName:
+							conversationTitle ?? null,
+
+						status: "success",
+
+						message: isStaff
+							? "WhatsApp staff message received"
+							: "WhatsApp customer message received",
+					});
+
+					await ingestNormalizedMessage(
+						normalized,
+						{
+							customerName:
+								conversationTitle,
+							role,
+						}
+					);
+				} catch (err) {
+					console.error(
+						"Failed to process WhatsApp message (ignored, service stays up):",
+						err
+					);
+				}
+			}
 		}
-	});
+	);
 
 	return sock;
 }

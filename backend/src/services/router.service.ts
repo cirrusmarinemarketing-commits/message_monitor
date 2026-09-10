@@ -75,6 +75,9 @@ export async function getDashboardConversations() {
             customerName:
                 conversation.customerName,
 
+            groupId:
+                conversation.groupId,
+
             messageCount:
                 conversation.messages.length,
 
@@ -126,6 +129,9 @@ export async function getDashboardConversation(
 
         customerName:
             conversation.customerName,
+
+        groupId:
+            conversation.groupId,
 
         messages:
             await getConversationHistory(

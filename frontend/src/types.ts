@@ -65,6 +65,7 @@ export type ConversationSummary = {
   channel: Channel
   conversationId: string
   customerName: string | null
+  groupId: string | null
   messageCount: number
   lastMessage: Message | null
   intent: Intent | string | null
@@ -77,6 +78,7 @@ export type ConversationDetail = {
   channel: Channel
   conversationId: string
   customerName: string | null
+  groupId: string | null
   messages: Message[]
   intent: Intent | string | null
   summary: string | null

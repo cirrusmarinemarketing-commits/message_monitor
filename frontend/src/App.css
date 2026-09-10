@@ -1117,6 +1117,65 @@ nav a.active .nav-count {
   gap: var(--space-2);
 }
 
+.message-row {
+  display: flex;
+  margin-bottom: var(--space-4);
+}
+
+.message-row-customer {
+  justify-content: flex-start;
+}
+
+.message-row-cirrus {
+  justify-content: flex-end;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.message-row-customer .message-content {
+  align-items: flex-start;
+}
+
+.message-row-cirrus .message-content {
+  align-items: flex-end;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.message-sender {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.message-role {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.message-row-customer .message-role {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+}
+
+.message-row-cirrus .message-role {
+  background: rgba(234, 179, 8, 0.1);
+  color: #f59e0b;
+}
+
 .bubble {
   max-width: 85%;
   padding: 10px 14px;
@@ -1172,6 +1231,20 @@ nav a.active .nav-count {
 
 .bubble-cirrus .bubble-sender {
   color: rgba(255, 255, 255, 0.85);
+}
+
+.group-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
 }
 
 /* ==================== States ==================== */
