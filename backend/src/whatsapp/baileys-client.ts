@@ -268,6 +268,11 @@ export async function startBaileysWhatsApp(): Promise<WASocket> {
 		}
 
 		if (connection === "close") {
+			console.error(
+				"WhatsApp disconnect:",
+				lastDisconnect?.error
+			);
+
 			const statusCode =
 				(lastDisconnect?.error as any)
 					?.output?.statusCode;
