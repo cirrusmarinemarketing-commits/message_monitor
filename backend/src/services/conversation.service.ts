@@ -121,35 +121,41 @@ export async function getConversationHistory(
             subject,
             message_timestamp,
             sender_name
-        FROM messages
-        WHERE conversation_id = $1
-          AND channel = $2
+        FROM (
+            SELECT
+                external_id,
+                role,
+                sender,
+                recipient,
+                message_type,
+                text,
+                subject,
+                message_timestamp,
+                sender_name,
+                created_at,
+                id
+            FROM messages
+            WHERE conversation_id = $1
+              AND channel = $2
+            ORDER BY
+                COALESCE(message_timestamp, created_at) DESC,
+                id DESC
+            LIMIT $3
+        ) recent
         ORDER BY
             COALESCE(message_timestamp, created_at) ASC,
             id ASC
-        LIMIT $3
         `,
-        [conversationId, channel, MAX_MESSAGES]
+        [
+            conversationId,
+            channel,
+            MAX_MESSAGES,
+        ]
     );
 
     return result.rows.map((row) => ({
         role: row.role,
         senderName: row.sender_name,
-        id: row.external_id,
-        from: row.sender,
-        to: row.recipient,
-        timestamp: row.message_timestamp
-            ? new Date(row.message_timestamp).toISOString()
-            : null,
-        type: row.message_type,
-        text: row.text,
-        subject: row.subject,
-        channel,
-        conversationId,
-    }));
-
-    return result.rows.map((row) => ({
-        role: row.role,
         id: row.external_id,
         from: row.sender,
         to: row.recipient,
@@ -311,7 +317,9 @@ export async function getAllConversations(): Promise<
             customerName: row.customer_name,
             groupId: row.group_id,
             messages,
-            updatedAt: new Date(row.updated_at).toISOString(),
+            updatedAt: new Date(
+                row.updated_at
+            ).toISOString(),
         });
     }
 
