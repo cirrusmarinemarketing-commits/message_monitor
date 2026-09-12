@@ -158,7 +158,11 @@ function ConversationDrawer({
               {lastMessage?.to && <Field label="To" value={lastMessage.to} />}
             </section>
 
-            {/* 3. AI analysis */}
+            {/* 3. AI analysis - restructured so the gist reads in one
+                glance: status + intent up top, summary as a lead
+                sentence, compact facts in a scannable grid, and the two
+                negotiation positions paired side-by-side instead of
+                buried in a single stacked list of 10 equal-weight fields. */}
             <section className="info-panel">
               <h3 className="drawer-section-title">AI Analysis</h3>
 
@@ -168,26 +172,58 @@ function ConversationDrawer({
                 </p>
               ) : (
                 <>
-                  <div className="field">
-                    <span className="field-label">Intent</span>
-                    <p className="field-value">
-                      <Badge label={intentMeta.label} color={intentMeta.color} />
-                    </p>
+                  <div className="analysis-top-row">
+                    <Badge label={intentMeta.label} color={intentMeta.color} />
+                    <StatusBadge status={analysis.conversation_status} />
                   </div>
-                  <Field label="Summary" value={analysis.summary} />
-                  <Field label="Equipment" value={analysis.equipment} />
-                  <Field label="Problem" value={analysis.problem} />
-                  <Field label="Location" value={analysis.location} />
+
+                  {analysis.summary && (
+                    <p className="analysis-summary">{analysis.summary}</p>
+                  )}
+
+                  {(analysis.equipment || analysis.problem || analysis.location || analysis.amount) && (
+                    <div className="field-grid">
+                      {analysis.equipment && (
+                        <div className="field">
+                          <span className="field-label">Equipment</span>
+                          <p className="field-value">{analysis.equipment}</p>
+                        </div>
+                      )}
+                      {analysis.location && (
+                        <div className="field">
+                          <span className="field-label">Location</span>
+                          <p className="field-value">{analysis.location}</p>
+                        </div>
+                      )}
+                      {analysis.problem && (
+                        <div className="field field-span-2">
+                          <span className="field-label">Problem</span>
+                          <p className="field-value">{analysis.problem}</p>
+                        </div>
+                      )}
+                      {analysis.amount && (
+                        <div className="field">
+                          <span className="field-label">Amount</span>
+                          <p className="field-value">{analysis.amount}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <Field label="Request" value={analysis.request} />
-                  <Field label="Amount" value={analysis.amount} />
-                  <Field label="Customer position" value={analysis.customer_position} />
-                  <Field label="Cirrus position" value={analysis.cirrus_position} />
-                  <div className="field">
-                    <span className="field-label">Conversation status</span>
-                    <p className="field-value">
-                      <StatusBadge status={analysis.conversation_status} />
-                    </p>
-                  </div>
+
+                  {(analysis.customer_position || analysis.cirrus_position) && (
+                    <div className="position-compare">
+                      <div className="position-card">
+                        <span className="field-label">Customer position</span>
+                        <p className="field-value">{analysis.customer_position ?? '—'}</p>
+                      </div>
+                      <div className="position-card position-card-cirrus">
+                        <span className="field-label">Cirrus position</span>
+                        <p className="field-value">{analysis.cirrus_position ?? '—'}</p>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </section>

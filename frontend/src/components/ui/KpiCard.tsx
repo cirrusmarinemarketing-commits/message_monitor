@@ -5,13 +5,14 @@ type KpiCardProps = {
   value: ReactNode
   hint?: string
   tone?: 'neutral' | 'warning' | 'error' | 'success'
+  size?: 'default' | 'large'
   onClick?: () => void
 }
 
-function KpiCard({ label, value, hint, tone = 'neutral', onClick }: KpiCardProps) {
+function KpiCard({ label, value, hint, tone = 'neutral', size = 'default', onClick }: KpiCardProps) {
   return (
     <div
-      className={`kpi-card kpi-card-${tone}${onClick ? ' kpi-card-clickable' : ''}`}
+      className={`kpi-card kpi-card-${tone}${size === 'large' ? ' kpi-card-large' : ''}${onClick ? ' kpi-card-clickable' : ''}`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
     >

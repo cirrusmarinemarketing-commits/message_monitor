@@ -7,8 +7,8 @@ type ChannelMeta = {
 }
 
 const CHANNEL_META: Record<Channel, ChannelMeta> = {
-  whatsapp: { label: 'WhatsApp', color: '#16a34a', glyph: 'W' },
-  email: { label: 'Email', color: '#2563eb', glyph: '@' },
+  whatsapp: { label: 'WhatsApp', color: '#178a56', glyph: 'W' },
+  email: { label: 'Email', color: '#3457e0', glyph: '@' },
 }
 
 export function getChannelMeta(channel: Channel | null | undefined): ChannelMeta {
@@ -16,5 +16,5 @@ export function getChannelMeta(channel: Channel | null | undefined): ChannelMeta
     return CHANNEL_META[channel]
   }
 
-  return { label: 'Unknown', color: '#6b7280', glyph: '?' }
+  return { label: 'Unknown', color: '#6b7686', glyph: '?' }
 }

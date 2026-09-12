@@ -39,7 +39,6 @@ type AnalyzeInput = {
     customer: CustomerInfo;
     currentMessage: ConversationMessage;
     conversationHistory: ConversationMessage[];
-    previousAnalysis?: AIAnalysis | null;
     channel?: "whatsapp" | "email";
     subject?: string | null;
 };
@@ -48,17 +47,8 @@ const SYSTEM_PROMPT = `
 You are Cirrus Marine's conversation analysis engine.
 
 Analyze the FULL conversation cluster, including both CUSTOMER and CIRRUS messages.
-
 The latest message triggers the analysis, but must NOT be analyzed alone.
-
-The conversation messages are the PRIMARY SOURCE OF TRUTH.
-
-A previous AI analysis may be provided as context.
-It is NOT the source of truth.
-Always validate it against the current conversation.
-If the previous analysis is outdated or contradicted by the conversation, correct it.
-
-Determine the CURRENT state of the conversation, not merely the previous state.
+Determine the current intent, conversation state, positions, and pending action from the whole conversation.
 
 Rules:
 - Use only facts stated in the conversation.
@@ -66,9 +56,6 @@ Rules:
 - Unknown information = null.
 - Preserve the meaning of the conversation.
 - For email, use the subject as context.
-- Keep CUSTOMER and CIRRUS positions separate.
-- pending_action must describe what is currently expected to happen next.
-- conversation_status must describe the current state after considering the whole conversation.
 
 INTENT:
 quotation_request, service_request, technical_support, parts_inquiry,
@@ -153,34 +140,18 @@ function buildUserPrompt(input: AnalyzeInput): string {
                     ? "CUSTOMER"
                     : "CIRRUS";
 
-            return `${index + 1}. ${role}: ${message.text ?? ""}`;
+            return `${index + 1}. ${role}: ${message.text ?? ""
+                }`;
         })
         .join("\n");
-
-    const previousAnalysis = input.previousAnalysis
-        ? JSON.stringify(
-            input.previousAnalysis,
-            null,
-            2
-        )
-        : "(none - this is the first analysis)";
 
     return `
 Channel: ${input.channel ?? "whatsapp"}
 Customer: ${input.customer.profile?.name ?? "Unknown"}
 Subject: ${input.subject ?? "(none)"}
 
-PREVIOUS AI ANALYSIS:
-${previousAnalysis}
-
 CONVERSATION CLUSTER:
 ${conversation || "(none)"}
-
-IMPORTANT:
-The previous AI analysis is only a reference.
-Use the conversation cluster as the source of truth.
-If the conversation has changed since the previous analysis,
-return the NEW CURRENT state.
 
 Analyze the entire conversation cluster.
 Return JSON only.

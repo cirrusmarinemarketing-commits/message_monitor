@@ -7,11 +7,11 @@
 export type Tone = 'success' | 'warning' | 'error' | 'info' | 'neutral'
 
 export const TONE_COLOR: Record<Tone, string> = {
-  success: '#16a34a',
-  warning: '#d97706',
-  error: '#dc2626',
-  info: '#2563eb',
-  neutral: '#6b7280',
+  success: '#178a56',
+  warning: '#c1750f',
+  error: '#d8393f',
+  info: '#3457e0',
+  neutral: '#6b7686',
 }
 
 type StatusMeta = {

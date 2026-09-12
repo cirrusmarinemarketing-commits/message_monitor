@@ -3,10 +3,10 @@ import type { ConversationSummary, HumanHandoffStatus, ServiceCaseStatus } from 
 export type Priority = 'urgent' | 'high' | 'normal' | 'low'
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
-  urgent: { label: 'Urgent', color: '#dc2626' },
-  high: { label: 'High', color: '#d97706' },
-  normal: { label: 'Normal', color: '#2563eb' },
-  low: { label: 'Low', color: '#9ca3af' },
+  urgent: { label: 'Urgent', color: '#d8393f' },
+  high: { label: 'High', color: '#c1750f' },
+  normal: { label: 'Normal', color: '#3457e0' },
+  low: { label: 'Low', color: '#97a1ac' },
 }
 
 const PRIORITY_RANK: Record<Priority, number> = {

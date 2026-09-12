@@ -1,4 +1,13 @@
 import { useMemo } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type {
   ActivityEvent,
   ConversationSummary,
@@ -40,6 +49,39 @@ const HEALTH_COMPONENT_LABEL: Record<string, string> = {
   gmail: 'Gmail ingestion',
   ai: 'AI processing',
   pipeline: 'Pipeline processing',
+}
+
+// 7-day conversation volume by channel, built from the real activity
+// stream (recharts is already a project dependency - this is the slot
+// the original code comment flagged for it).
+const VOLUME_DAYS = 7
+
+function buildVolumeSeries(activity: ActivityEvent[]) {
+  const days: { key: string; label: string; whatsapp: number; email: number }[] = []
+  const now = new Date()
+
+  for (let i = VOLUME_DAYS - 1; i >= 0; i -= 1) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    days.push({
+      key: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString(undefined, { weekday: 'short' }),
+      whatsapp: 0,
+      email: 0,
+    })
+  }
+
+  const byKey = new Map(days.map((d) => [d.key, d]))
+
+  for (const event of activity) {
+    const key = new Date(event.timestamp).toISOString().slice(0, 10)
+    const bucket = byKey.get(key)
+    if (!bucket) continue
+    if (event.channel === 'whatsapp') bucket.whatsapp += 1
+    else if (event.channel === 'email') bucket.email += 1
+  }
+
+  return days
 }
 
 function OverviewPage({
@@ -100,6 +142,8 @@ function OverviewPage({
     ? Object.entries(health).filter(([, status]) => status.state === 'error' || status.state === 'offline')
     : []
 
+  const hasIssues = errorComponents.length > 0 || needsAttention.length > 0
+
   const recentConversations = [...conversations]
     .sort((a, b) => {
       const at = a.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0
@@ -127,67 +171,150 @@ function OverviewPage({
     .sort()
     .at(-1)
 
+  const volumeDays = useMemo(() => buildVolumeSeries(activity), [activity])
+  const volumeTotal = volumeDays.reduce((sum, d) => sum + d.whatsapp + d.email, 0)
+
   return (
     <>
-      {/* ===== Critical alerts ===== */}
-      {(errorComponents.length > 0 || needsAttention.length > 0) && (
-        <div className="alert-strip">
+      {/* ===== Status banner - always present, not just when something's wrong ===== */}
+      <div className={`status-banner${hasIssues ? ' status-banner-issues' : ''}`}>
+        <span className="status-banner-dot" />
+        <span>{hasIssues ? 'Attention needed' : 'All systems operational'}</span>
+
+        <div className="status-banner-chips">
           {errorComponents.map(([name, status]) => (
-            <div className="alert-chip alert-chip-error" key={name}>
-              <StatusBadge status={status.state} />
-              <span>{HEALTH_COMPONENT_LABEL[name] ?? name} is {status.state}</span>
-            </div>
+            <span className="status-chip status-chip-error" key={name}>
+              <StatusBadge status={status.state} compact />
+              {HEALTH_COMPONENT_LABEL[name] ?? name} {status.state}
+            </span>
           ))}
 
           {needsAttention.length > 0 && (
-            <div
-              className="alert-chip alert-chip-warning"
+            <span
+              className="status-chip status-chip-warning clickable"
               onClick={() => onNavigateInbox('needs_attention')}
             >
-              <StatusBadge status="warning" />
-              <span>{needsAttention.length} conversation{needsAttention.length === 1 ? '' : 's'} need attention</span>
-            </div>
+              {needsAttention.length} need{needsAttention.length === 1 ? 's' : ''} attention
+            </span>
+          )}
+
+          {!hasIssues && (
+            <>
+              <span className="status-chip">WhatsApp OK</span>
+              <span className="status-chip">Gmail OK</span>
+              <span className="status-chip">AI OK</span>
+            </>
           )}
         </div>
-      )}
+      </div>
 
-      {/* ===== KPI row ===== */}
-      <div className="stats stats-dense">
-        <KpiCard label="Total conversations" value={overview?.conversations ?? '—'} onClick={() => onNavigateInbox('all')} />
-        <KpiCard label="Active" value={activeConversations.length} onClick={() => onNavigateInbox('all')} />
+      {/* ===== Primary KPIs - the metrics that actually require action ===== */}
+      <div className="kpi-primary">
         <KpiCard
           label="Waiting for Cirrus"
           value={waitingForCirrus.length}
           tone={waitingForCirrus.length > 0 ? 'warning' : 'neutral'}
+          hint="Needs a reply to move forward"
+          size="large"
           onClick={() => onNavigateInbox('waiting_for_cirrus')}
-        />
-        <KpiCard
-          label="Waiting for customer"
-          value={waitingForCustomer.length}
-          onClick={() => onNavigateInbox('waiting_for_customer')}
-        />
-        <KpiCard
-          label="Open cases"
-          value={overview?.openCases ?? '—'}
-          tone={overview && overview.openCases > 0 ? 'warning' : 'neutral'}
-          onClick={() => onNavigateInbox('open_case')}
         />
         <KpiCard
           label="Human handoffs"
           value={overview?.openHandoffs ?? '—'}
           tone={overview && overview.openHandoffs > 0 ? 'error' : 'neutral'}
+          hint="Open - requires a person"
+          size="large"
           onClick={() => onNavigateInbox('handoff')}
         />
         <KpiCard
-          label="Unprocessed"
-          value={unprocessed.length}
-          hint="No AI analysis yet"
+          label="Open cases"
+          value={overview?.openCases ?? '—'}
+          tone={overview && overview.openCases > 0 ? 'warning' : 'neutral'}
+          size="large"
+          onClick={() => onNavigateInbox('open_case')}
         />
-        <KpiCard label="Total messages" value={overview?.messages ?? '—'} />
       </div>
 
-      {/* ===== Main operational area: priority conversations | open cases | system health ===== */}
-      <div className="three-col">
+      {/* ===== Secondary KPIs - compact strip, still visible, lower visual weight ===== */}
+      <div className="kpi-secondary">
+        <div className="kpi-mini clickable" onClick={() => onNavigateInbox('all')}>
+          <div className="kpi-mini-value">{overview?.conversations ?? '—'}</div>
+          <div className="kpi-mini-label">Total conversations</div>
+        </div>
+        <div className="kpi-mini clickable" onClick={() => onNavigateInbox('all')}>
+          <div className="kpi-mini-value">{activeConversations.length}</div>
+          <div className="kpi-mini-label">Active</div>
+        </div>
+        <div className="kpi-mini clickable" onClick={() => onNavigateInbox('waiting_for_customer')}>
+          <div className="kpi-mini-value">{waitingForCustomer.length}</div>
+          <div className="kpi-mini-label">Waiting for customer</div>
+        </div>
+        <div className="kpi-mini">
+          <div className="kpi-mini-value">{unprocessed.length}</div>
+          <div className="kpi-mini-label">Unprocessed</div>
+        </div>
+        <div className="kpi-mini">
+          <div className="kpi-mini-value">{overview?.messages ?? '—'}</div>
+          <div className="kpi-mini-label">Total messages</div>
+        </div>
+      </div>
+
+      {/* ===== Conversation volume - real data, grouped from the activity stream ===== */}
+      <div className="panel chart-card">
+        <div className="panel-header">
+          <h2>Conversation volume</h2>
+          <div className="legend-inline">
+            <span><span className="legend-dot legend-dot-whatsapp" />WhatsApp</span>
+            <span><span className="legend-dot legend-dot-email" />Email</span>
+          </div>
+        </div>
+        <p className="chart-sub">{volumeTotal} events in the last {VOLUME_DAYS} days, by channel</p>
+
+        {volumeTotal === 0 ? (
+          <EmptyState title="No activity yet" description="Volume will appear once events start flowing through the pipeline." />
+        ) : (
+          <div className="chart-area">
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={volumeDays} barCategoryGap={18}>
+                <CartesianGrid vertical={false} stroke="var(--color-border-soft)" />
+                <XAxis
+                  dataKey="label"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'var(--color-text-faint)', fontSize: 11 }}
+                />
+                <YAxis hide allowDecimals={false} />
+                <Tooltip
+                  cursor={{ fill: 'var(--color-surface-alt)' }}
+                  contentStyle={{
+                    borderRadius: 10,
+                    border: '1px solid var(--color-border)',
+                    fontSize: 12,
+                    boxShadow: 'var(--shadow-md)',
+                  }}
+                />
+                <Bar
+                  dataKey="whatsapp"
+                  name="WhatsApp"
+                  stackId="volume"
+                  fill={getChannelMeta('whatsapp').color}
+                  radius={[0, 0, 0, 0]}
+                />
+                <Bar
+                  dataKey="email"
+                  name="Email"
+                  stackId="volume"
+                  fill={getChannelMeta('email').color}
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* ===== Main operational area: conversations (wide) | cases + health (stacked, narrow) ===== */}
+      <div className="main-grid">
         <div className="panel">
           <div className="panel-header">
             <h2>Recent conversations</h2>
@@ -226,94 +353,89 @@ function OverviewPage({
           )}
         </div>
 
-        <div className="panel">
-          <div className="panel-header">
-            <h2>Open cases</h2>
-            <span>{overview?.openCases ?? cases.length}</span>
-          </div>
-
-          {openCases.length === 0 ? (
-            <EmptyState title="No open cases" />
-          ) : (
-            <div className="mini-case-list">
-              {openCases.map((item) => (
-                <div className="mini-case-row clickable" key={item.id} onClick={() => onSelectCase(item)}>
-                  <div className="mini-case-top">
-                    <ChannelBadge channel={item.channel} compact />
-                    <strong>{item.customerName ?? item.conversationId}</strong>
-                  </div>
-                  <p>{item.equipment ?? item.summary ?? item.request ?? 'No summary'}</p>
-                  <span className="mini-case-meta">{formatRelativeTime(item.createdAt)}</span>
-                </div>
-              ))}
+        <div>
+          <div className="panel">
+            <div className="panel-header">
+              <h2>Open cases</h2>
+              <span>{overview?.openCases ?? cases.length}</span>
             </div>
-          )}
-        </div>
 
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>System health</h2>
-              <span>Ingestion &amp; processing</span>
-            </div>
-          </div>
-
-          {!health ? (
-            <EmptyState title="Health data unavailable" />
-          ) : (
-            <div className="health-grid health-grid-compact">
-              {(Object.keys(HEALTH_COMPONENT_LABEL) as (keyof typeof HEALTH_COMPONENT_LABEL)[]).map((name) => {
-                const status = health[name as keyof SystemHealth]
-                return (
-                  <div className="health-card" key={name}>
-                    <div className="health-card-top">
-                      <span>{HEALTH_COMPONENT_LABEL[name]}</span>
-                      <StatusBadge status={status.state} />
+            {openCases.length === 0 ? (
+              <EmptyState title="No open cases" />
+            ) : (
+              <div className="mini-case-list">
+                {openCases.map((item) => (
+                  <div className="mini-case-row clickable" key={item.id} onClick={() => onSelectCase(item)}>
+                    <div className="mini-case-top">
+                      <ChannelBadge channel={item.channel} compact />
+                      <strong>{item.customerName ?? item.conversationId}</strong>
                     </div>
-                    <span className="health-card-meta">
-                      {status.lastEventAt
-                        ? `Last event ${formatRelativeTime(status.lastEventAt)}`
-                        : 'No events yet'}
-                    </span>
-                    {status.lastError && (
-                      <span className="health-card-error">{status.lastError}</span>
-                    )}
+                    <p>{item.equipment ?? item.summary ?? item.request ?? 'No summary'}</p>
+                    <span className="mini-case-meta">{formatRelativeTime(item.createdAt)}</span>
                   </div>
-                )
-              })}
-
-              <div className="health-card">
-                <div className="health-card-top">
-                  <span>
-                    <ChannelBadge channel="whatsapp" compact /> channel
-                  </span>
-                </div>
-                <span className="health-card-meta">
-                  {whatsappLast ? `Last message ${formatRelativeTime(whatsappLast)}` : 'No messages yet'}
-                </span>
+                ))}
               </div>
+            )}
+          </div>
 
-              <div className="health-card">
-                <div className="health-card-top">
-                  <span>
-                    <ChannelBadge channel="email" compact /> channel
-                  </span>
-                </div>
-                <span className="health-card-meta">
-                  {emailLast ? `Last message ${formatRelativeTime(emailLast)}` : 'No messages yet'}
-                </span>
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>System health</h2>
+                <span>Ingestion &amp; processing</span>
               </div>
             </div>
-          )}
+
+            {!health ? (
+              <EmptyState title="Health data unavailable" />
+            ) : (
+              <>
+                <div className="health-sub-label">Pipeline components</div>
+                <div className="health-list">
+                  {(Object.keys(HEALTH_COMPONENT_LABEL) as (keyof typeof HEALTH_COMPONENT_LABEL)[]).map((name) => {
+                    const status = health[name as keyof SystemHealth]
+                    return (
+                      <div className="health-row" key={name}>
+                        <span className="health-row-name">
+                          <StatusBadge status={status.state} compact />
+                          {HEALTH_COMPONENT_LABEL[name]}
+                        </span>
+                        <span className="health-row-meta">
+                          {status.lastEventAt ? formatRelativeTime(status.lastEventAt) : 'No events yet'}
+                        </span>
+                        {status.lastError && (
+                          <span className="health-card-error">{status.lastError}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="health-sub-label">Channel activity</div>
+                <div className="health-list">
+                  <div className="health-row">
+                    <span className="health-row-name"><ChannelBadge channel="whatsapp" compact /> WhatsApp</span>
+                    <span className="health-row-meta">
+                      {whatsappLast ? `Last message ${formatRelativeTime(whatsappLast)}` : 'No messages yet'}
+                    </span>
+                  </div>
+                  <div className="health-row">
+                    <span className="health-row-name"><ChannelBadge channel="email" compact /> Email</span>
+                    <span className="health-row-meta">
+                      {emailLast ? `Last message ${formatRelativeTime(emailLast)}` : 'No messages yet'}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ===== Activity stream =====
-          Kept as its own full-width chronological section (rather than
-          folded into the 3-col grid above) so it reads top-to-bottom
-          uninterrupted - this is also the natural slot for a future
-          conversation-volume/intent-distribution chart alongside it,
-          without touching the 3-col operational grid above. */}
+          Kept as its own full-width chronological section below the
+          weighted operational grid, so it reads top-to-bottom
+          uninterrupted after the volume chart above. */}
       <div className="panel">
         <div className="panel-header">
           <h2>Recent activity</h2>
